@@ -1,6 +1,6 @@
 package eu.kanade.tachiyomi.extension.es.dragontranslationorg
 
-import eu.kanade.tachiyomi.multisrc.madara.Madara
+import eu.kanade.tachiyomi.multisrc.madara.MadaraNoAjax
 import eu.kanade.tachiyomi.source.model.SChapter
 import keiyoushi.annotation.Source
 import keiyoushi.network.rateLimit
@@ -11,7 +11,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Source
-abstract class DragonTranslationOrg : Madara() {
+abstract class DragonTranslationOrg : MadaraNoAjax() {
     override val supportsPostId = false
     override val chapterDateFormat = DateTimeFormatter.ofPattern("MMMM dd, yyyy", Locale.forLanguageTag("es"))
 
