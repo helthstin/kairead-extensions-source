@@ -43,15 +43,28 @@ abstract class DragonTranslationOrg : MadaraNoAjax() {
     override fun getChapterUrl(chapter: SChapter) = "$baseUrl${chapter.url}"
 
     override suspend fun fetchChapters(
-        mangaPath: String,
-        id: String,
-        mangaPage: Document?,
-    ) = mangaPage!!.selectFirst("script#mk-chapters-data")!!.data()
-        .parseAs<ChapterListDto>().items.map { chapterDto ->
-            SChapter.create().apply {
-                setUrlWithoutDomain(chapterDto.url)
-                name = chapterDto.name
-                date_upload = parseChapterDate(chapterDto.ago)
-            }
+    mangaPath: String,
+    id: String,
+    mangaPage: Document?,
+): List<SChapter> {
+    val chapterJson = mangaPage
+        ?.select("script[type=application/json]")
+        ?.firstOrNull { script ->
+            val data = script.data()
+            data.contains("\"mangaId\"") &&
+                data.contains("\"items\"")
         }
-}
+        ?.data()
+        ?: return emptyList()
+
+    return chapterJson.parseAs<ChapterListDto>().items.map { chapterDto ->
+        SChapter.create().apply {
+            setUrlWithoutDomain(chapterDto.url)
+            name = chapterDto.name
+            date_upload = runCatching {
+                parseChapterDate(chapterDto.ago)
+            }.getOrDefault(0L)
+          }
+        }
+      }
+    } 
