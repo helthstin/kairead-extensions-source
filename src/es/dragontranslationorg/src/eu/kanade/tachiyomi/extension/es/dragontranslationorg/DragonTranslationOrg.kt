@@ -9,6 +9,8 @@ import okhttp3.OkHttpClient
 import org.jsoup.nodes.Document
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import eu.kanade.tachiyomi.source.model.SManga
+import org.jsoup.nodes.Element
 
 @Source
 abstract class DragonTranslationOrg : MadaraNoAjax() {
@@ -21,6 +23,16 @@ abstract class DragonTranslationOrg : MadaraNoAjax() {
     override fun archiveSelector() = "a.acard"
     override val archiveUrlSelector = "a"
     override val archiveTitleSelector = ".ac-t"
+    override fun archiveManga(element: Element, id: String): SManga? {
+    val href = element.attr("abs:href")
+    if (href.isBlank()) return null
+
+    return SManga.create().apply {
+        url = java.net.URI(href).path
+        title = element.selectFirst(".ac-t")?.text() ?: element.text()
+        thumbnail_url = element.selectFirst("img")?.absUrl("src")
+    }
+    }
 
     override val mangaDetailsSelectorTitle = "div.hcol > .htitle"
     override val mangaDetailsSelectorStatus = "div.hcol > .htags > .htag--status"
