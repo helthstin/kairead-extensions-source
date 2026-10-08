@@ -34,11 +34,13 @@ abstract class DragonTranslationOrg : MadaraNoAjax() {
     }
     }
 
-    override val mangaDetailsSelectorTitle = "div.hcol > .htitle"
-    override val mangaDetailsSelectorStatus = "div.hcol > .htags > .htag--status"
-    override val mangaDetailsSelectorDescription = "div#syn > p"
-    override val mangaDetailsSelectorThumbnail = "div.hposter__card > img"
-    override val mangaDetailsSelectorGenre = "div.hcol > .hchips--genres > a.chip"
+    
+    override val mangaDetailsSelectorTitle = ".hero__in h1"
+    override val mangaDetailsSelectorStatus = ".htags .htag"
+    override val mangaDetailsSelectorDescription = ".syn p"
+    override val mangaDetailsSelectorThumbnail = ".hposter img"
+    override val mangaDetailsSelectorGenre = ".hchips a.chip"
+  
 
     override fun getChapterUrl(chapter: SChapter) = "$baseUrl${chapter.url}"
 
