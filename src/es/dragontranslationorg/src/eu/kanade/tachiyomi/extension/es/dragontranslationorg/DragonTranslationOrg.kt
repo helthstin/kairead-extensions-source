@@ -20,16 +20,16 @@ abstract class DragonTranslationOrg : MadaraNoAjax() {
     override fun OkHttpClient.Builder.configureClient() = rateLimit(3)
 
     override val filterGenresSelector = ".filters"
-    override fun archiveSelector() = "a.acard"
-    override val archiveUrlSelector = "a"
-    override val archiveTitleSelector = ".ac-t"
+    override fun archiveSelector() = "a.mb799cfc"
+    override val archiveUrlSelector = ""
+    override val archiveTitleSelector = ".m3ae409d"
     override fun archiveManga(element: Element, id: String): SManga? {
     val href = element.attr("abs:href")
     if (href.isBlank()) return null
 
     return SManga.create().apply {
         url = java.net.URI(href).path
-        title = element.selectFirst(".ac-t")?.text() ?: element.text()
+        title = element.selectFirst(".m3ae409d")?.text() ?: element.attr("title")
         thumbnail_url = element.selectFirst("img")?.absUrl("src")
     }
     }
