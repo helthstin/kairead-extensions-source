@@ -30,7 +30,7 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew :src:es:dragontranslationorg:spotlessApply
-./gradlew :src:es:dragontranslationorg:assembleRelease
+          ./gradlew :src:es:dragontranslationorg:assembleRelease
 
           
       - name: Guardar APK de DragonTranslation
