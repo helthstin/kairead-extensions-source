@@ -11,7 +11,6 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import eu.kanade.tachiyomi.source.model.SManga
 import org.jsoup.nodes.Element
-import eu.kanade.tachiyomi.source.model.Page
 
 @Source
 abstract class DragonTranslationOrg : MadaraNoAjax() {
@@ -70,14 +69,5 @@ abstract class DragonTranslationOrg : MadaraNoAjax() {
           }
         }
       }
-    override fun pageListParse(document: Document): List<Page> {
-    return document.select(
-        ".reading-content img.wp-manga-chapter-img"
-    ).mapIndexed { index, element ->
-        Page(
-            index,
-            imageUrl = element.absUrl("src")
-        )
-      } 
-    }
+    override val pageListParseSelector = ".reading-content .m99d6075"
   } 
