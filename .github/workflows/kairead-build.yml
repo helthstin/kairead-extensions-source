@@ -30,3 +30,13 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew :src:es:dragontranslationorg:assembleRelease
+
+          
+      - name: Guardar APK de DragonTranslation
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kairead-DragonTranslation
+          path: |
+           src/es/dragontranslationorg/build/outputs/**/*.apk
+          if-no-files-found: error
+          
