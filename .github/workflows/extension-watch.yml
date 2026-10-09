@@ -1,0 +1,112 @@
+name: Kairead Extension Watch
+
+on:
+  schedule:
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-extensions:
+    name: Revisar actualizaciones
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar nuestro repositorio
+        uses: actions/checkout@v4
+
+      - name: Buscar cambios en Keiyoushi
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+          import subprocess
+
+          owner = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+
+          extensions = [
+              "dragontranslationorg"
+          ]
+
+          api = "https://api.github.com"
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "User-Agent": "Kairead-Extension-Watch"
+          }
+
+          for extension in extensions:
+              path = f"src/es/{extension}"
+
+              url = (
+                  f"{api}/repos/keiyoushi/extensions-source/"
+                  f"commits?path={path}&per_page=1"
+              )
+
+              request = urllib.request.Request(
+                  url, headers=headers
+              )
+
+              try:
+                  with urllib.request.urlopen(request) as response:
+                      commits = json.load(response)
+
+                  if not commits:
+                      print(f"Sin historial: {extension}")
+                      continue
+
+                  latest = commits[0]["sha"]
+
+                  title = f"[Extension Watch] {extension}"
+
+                  result = subprocess.run(
+                      [
+                          "gh", "issue", "list",
+                          "--repo", owner,
+                          "--state", "open",
+                          "--search", title,
+                          "--json", "title"
+                      ],
+                      capture_output=True,
+                      text=True,
+                      check=True
+                  )
+
+                  issues = json.loads(result.stdout)
+
+                  if any(i["title"] == title for i in issues):
+                      print(f"Ya existe aviso: {extension}")
+                      continue
+
+                  body = (
+                      f"Se detectó una versión de referencia "
+                      f"en Keiyoushi.\n\n"
+                      f"Extensión: {extension}\n"
+                      f"Commit: {latest}\n\n"
+                      f"Revisar manualmente antes de incorporar cambios.\n"
+                      f"No modificar automáticamente nuestra extensión."
+                  )
+
+                  subprocess.run(
+                      [
+                          "gh", "issue", "create",
+                          "--repo", owner,
+                          "--title", title,
+                          "--body", body
+                      ],
+                      check=True
+                  )
+
+                  print(f"Aviso creado: {extension}")
+
+              except Exception as error:
+                  print(f"Error revisando {extension}: {error}")
+                  raise
+          PY
