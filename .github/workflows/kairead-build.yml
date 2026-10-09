@@ -41,3 +41,61 @@ jobs:
            src/es/dragontranslationorg/build/outputs/**/*.apk
           if-no-files-found: error
           
+      - name: Publicar APK en KayHelthRepo
+        env:
+          GH_TOKEN: ${{ secrets.KAYHELTH_REPO_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import glob
+          import os
+          import subprocess
+          import tempfile
+
+          apks = glob.glob(
+              "src/es/dragontranslationorg/build/outputs/**/*.apk",
+              recursive=True,
+          )
+          if len(apks) != 1:
+              raise SystemExit(f"Se esperaba una APK, encontradas: {apks}")
+
+          with tempfile.TemporaryDirectory() as directory:
+              subprocess.run([
+                  "git", "clone",
+                  "https://x-access-token:" + os.environ["GH_TOKEN"] +
+                  "@github.com/helthstin/KayHelthRepo.git",
+                  directory,
+              ], check=True)
+
+              import shutil
+              destination = os.path.join(directory, "apk")
+              os.makedirs(destination, exist_ok=True)
+              shutil.copy2(apks[0], destination)
+
+              subprocess.run(
+                  ["git", "-C", directory, "add", "apk/"],
+                  check=True,
+              )
+              changed = subprocess.run(
+                  ["git", "-C", directory, "diff", "--cached", "--quiet"]
+              ).returncode != 0
+
+              if changed:
+                  subprocess.run([
+                      "git", "-C", directory, "config",
+                      "user.name", "github-actions[bot]",
+                  ], check=True)
+                  subprocess.run([
+                      "git", "-C", directory, "config",
+                      "user.email",
+                      "41898282+github-actions[bot]@users.noreply.github.com",
+                  ], check=True)
+                  subprocess.run([
+                      "git", "-C", directory, "commit",
+                      "-m", "Publicar APK de DragonTranslation",
+                  ], check=True)
+                  subprocess.run(
+                      ["git", "-C", directory, "push"],
+                      check=True,
+                  )
+          PY
+          
