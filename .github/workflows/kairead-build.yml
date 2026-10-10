@@ -89,8 +89,7 @@ jobs:
           import shutil
           import subprocess
           import tempfile
-
-                    import json
+          import json
 
           with open("kairead-extensions.json", encoding="utf-8") as archivo:
               configuracion = json.load(archivo)
