@@ -54,23 +54,37 @@ jobs:
           path: |
             src/en/batcave/build/outputs/**/*.apk
           if-no-files-found: error
-          
-      - name: Publicar APK en KayHelthRepo
+      
+      - name: Publicar APKs en KayHelthRepo
         env:
           GH_TOKEN: ${{ secrets.KAYHELTH_REPO_TOKEN }}
         run: |
           python3 - <<'PY'
           import glob
           import os
+          import shutil
           import subprocess
           import tempfile
 
-          apks = glob.glob(
-              "src/es/dragontranslationorg/build/outputs/**/*.apk",
-              recursive=True,
-          )
-          if len(apks) != 1:
-              raise SystemExit(f"Se esperaba una APK, encontradas: {apks}")
+          extensiones = {
+              "DragonTranslation": "src/es/dragontranslationorg",
+              "BatCave": "src/en/batcave",
+          }
+
+          apks = {}
+
+          for nombre, carpeta in extensiones.items():
+              archivos = glob.glob(
+                  f"{carpeta}/build/outputs/**/*.apk",
+                  recursive=True,
+              )
+
+              if len(archivos) != 1:
+                  raise SystemExit(
+                      f"{nombre}: se esperaba una APK, encontradas: {archivos}"
+                  )
+
+              apks[nombre] = archivos[0]
 
           with tempfile.TemporaryDirectory() as directory:
               subprocess.run([
@@ -80,36 +94,44 @@ jobs:
                   directory,
               ], check=True)
 
-              import shutil
-              destination = os.path.join(directory, "apk")
-              os.makedirs(destination, exist_ok=True)
-              shutil.copy2(apks[0], destination)
+              destino = os.path.join(directory, "apk")
+              os.makedirs(destino, exist_ok=True)
 
-              subprocess.run(
-                  ["git", "-C", directory, "add", "apk/"],
-                  check=True,
-              )
-              changed = subprocess.run(
-                  ["git", "-C", directory, "diff", "--cached", "--quiet"]
-              ).returncode != 0
+              for nombre, archivo in apks.items():
+                  shutil.copy2(archivo, destino)
+                  print(f"APK preparada: {nombre}")
 
-              if changed:
+              subprocess.run([
+                  "git", "-C", directory, "add", "apk/"
+              ], check=True)
+
+              cambios = subprocess.run([
+                  "git", "-C", directory,
+                  "diff", "--cached", "--quiet"
+              ]).returncode != 0
+
+              if cambios:
                   subprocess.run([
                       "git", "-C", directory, "config",
-                      "user.name", "github-actions[bot]",
+                      "user.name", "github-actions[bot]"
                   ], check=True)
+
                   subprocess.run([
                       "git", "-C", directory, "config",
                       "user.email",
-                      "41898282+github-actions[bot]@users.noreply.github.com",
+                      "41898282+github-actions[bot]@users.noreply.github.com"
                   ], check=True)
+
                   subprocess.run([
                       "git", "-C", directory, "commit",
-                      "-m", "Publicar APK de DragonTranslation",
+                      "-m", "Publicar extensiones Kairead"
                   ], check=True)
-                  subprocess.run(
-                      ["git", "-C", directory, "push"],
-                      check=True,
-                  )
+
+                  subprocess.run([
+                      "git", "-C", directory, "push"
+                  ], check=True)
+
+                  print("Extensiones publicadas correctamente")
+              else:
+                  print("No hay APKs nuevas para publicar")
           PY
-          
