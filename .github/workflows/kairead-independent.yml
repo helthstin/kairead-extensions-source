@@ -140,9 +140,9 @@ jobs:
                   str(carpeta),
               ], check=True)
 
-           import json
+              import json
 
-           catalogo = json.loads(
+              catalogo = json.loads(
                   (carpeta / "index.json").read_text(encoding="utf-8")
               )
               paquete = (
