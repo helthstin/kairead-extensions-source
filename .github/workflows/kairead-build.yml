@@ -30,13 +30,37 @@ jobs:
         run: |
           chmod +x ./gradlew
 
-          # DragonTranslation
-          ./gradlew :src:es:dragontranslationorg:spotlessApply
-          ./gradlew :src:es:dragontranslationorg:assembleRelease
+          EXTENSIONES=$(python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
 
-          # BatCave
-          ./gradlew :src:en:batcave:spotlessApply
-          ./gradlew :src:en:batcave:assembleRelease
+          config = json.loads(Path("kairead-extensions.json").read_text())
+          extensiones = config["extensions"]
+
+          if not extensiones:
+              raise ValueError("La lista de extensiones está vacía")
+
+          for extension in extensiones:
+              if not re.fullmatch(r"[a-z]{2,3}/[a-z0-9_]+", extension):
+                  raise ValueError(f"Nombre de extensión inválido: {extension}")
+
+              if not Path(f"src/{extension}/build.gradle.kts").is_file():
+                  raise FileNotFoundError(f"Extensión no encontrada: {extension}")
+
+              print(extension)
+          PY
+          )
+
+          while IFS= read -r extension; do
+            tarea="${extension//\//:}"
+
+            echo "Compilando: $extension"
+
+            ./gradlew ":src:$tarea:spotlessApply"
+            ./gradlew ":src:$tarea:assembleRelease"
+
+          done <<< "$EXTENSIONES"
 
           
       - name: Guardar APK de DragonTranslation
