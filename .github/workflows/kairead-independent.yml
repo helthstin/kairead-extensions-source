@@ -78,7 +78,21 @@ jobs:
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
+        
+      - name: Preparar firma digital Kairead
+        env:
+          SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
+        run: |
+          if [ -z "$SIGNING_KEY_BASE64" ]; then
+            echo "ERROR: Falta la clave de firma"
+            exit 1
+          fi
 
+          printf '%s' "$SIGNING_KEY_BASE64" | base64 --decode > signingkey.jks
+          chmod 600 signingkey.jks
+          test -s signingkey.jks
+          echo "Clave de firma preparada correctamente"
+          
       - name: Compilar extension
         run: |
           chmod +x ./gradlew
