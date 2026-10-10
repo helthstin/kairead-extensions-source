@@ -137,7 +137,7 @@ def main():
                     "Mismo codigo con distinta APK"
                 )
 
-                      print(
+            print(
                 "Version ya registrada. "
                 "Se comprobaran sus metadatos."
                         )
