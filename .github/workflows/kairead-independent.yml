@@ -106,7 +106,31 @@ jobs:
 
           ./gradlew "${TAREA}:spotlessApply"
           ./gradlew "${TAREA}:assembleRelease"
+          
+      - name: Verificar firma digital Kairead
+        env:
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          ALIAS: ${{ secrets.ALIAS }}
+        run: |
+          set -euo pipefail
 
+          APK="$(find "src/${{ matrix.extension }}/build/outputs" -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$APKSIGNER"
+
+          EXPECTED="$(keytool -exportcert -alias "$ALIAS" -keystore signingkey.jks -storepass "$KEY_STORE_PASSWORD" | sha256sum | cut -d' ' -f1)"
+
+          ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
+
+          if [ -z "$ACTUAL" ] || [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "ERROR: La APK no tiene la firma esperada"
+            exit 1
+          fi
+
+          echo "Firma digital Kairead verificada correctamente"
+          
       - name: Guardar APK individual
         uses: actions/upload-artifact@v4
         with:
