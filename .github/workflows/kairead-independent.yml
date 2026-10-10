@@ -1,0 +1,179 @@
+
+name: Kairead Independent Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preparar:
+    name: Leer lista de extensiones
+    runs-on: ubuntu-latest
+    outputs:
+      extensions: ${{ steps.lista.outputs.extensions }}
+
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar lista
+        id: lista
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          config = json.loads(
+              Path("kairead-extensions.json").read_text(encoding="utf-8")
+          )
+          extensiones = config["extensions"]
+
+          if not extensiones:
+              raise ValueError("No hay extensiones configuradas")
+
+          if len(extensiones) != len(set(extensiones)):
+              raise ValueError("Hay extensiones duplicadas")
+
+          for extension in extensiones:
+              if not re.fullmatch(r"[a-z]{2,3}/[a-z0-9_]+", extension):
+                  raise ValueError(f"Nombre invalido: {extension}")
+
+              archivo = Path(f"src/{extension}/build.gradle.kts")
+              if not archivo.is_file():
+                  raise FileNotFoundError(archivo)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as salida:
+              salida.write(
+                  "extensions=" + json.dumps(extensiones) + "\n"
+              )
+
+          print("Extensiones preparadas:", extensiones)
+          PY
+
+  compilar:
+    name: Compilar ${{ matrix.extension }}
+    needs: preparar
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        extension: ${{ fromJSON(needs.preparar.outputs.extensions) }}
+
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compilar extension
+        run: |
+          chmod +x ./gradlew
+
+          EXTENSION="${{ matrix.extension }}"
+          TAREA=":src:${EXTENSION//\//:}"
+
+          ./gradlew "${TAREA}:spotlessApply"
+          ./gradlew "${TAREA}:assembleRelease"
+
+      - name: Guardar APK individual
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kairead-${{ strategy.job-index }}
+          path: src/${{ matrix.extension }}/build/outputs/**/*.apk
+          if-no-files-found: error
+
+      - name: Publicar APK individual
+        env:
+          GH_TOKEN: ${{ secrets.KAYHELTH_REPO_TOKEN }}
+          EXTENSION: ${{ matrix.extension }}
+        run: |
+          python3 - <<'PY'
+          import glob
+          import os
+          import shutil
+          import subprocess
+          import tempfile
+          import time
+          from pathlib import Path
+
+          extension = os.environ["EXTENSION"]
+          archivos = glob.glob(
+              f"src/{extension}/build/outputs/**/*.apk",
+              recursive=True,
+          )
+
+          if len(archivos) != 1:
+              raise SystemExit(
+                  f"{extension}: se esperaba una APK, encontradas: {archivos}"
+              )
+
+          if not os.environ.get("GH_TOKEN"):
+              raise SystemExit("Falta KAYHELTH_REPO_TOKEN")
+
+          def git(carpeta, *argumentos):
+              subprocess.run(
+                  ["git", "-C", str(carpeta), *argumentos],
+                  check=True,
+              )
+
+          with tempfile.TemporaryDirectory() as temporal:
+              carpeta = Path(temporal) / "repo"
+
+              subprocess.run([
+                  "git", "clone",
+                  "https://x-access-token:" + os.environ["GH_TOKEN"]
+                  + "@github.com/helthstin/KayHelthRepo.git",
+                  str(carpeta),
+              ], check=True)
+
+              destino = carpeta / "apk" / Path(archivos[0]).name
+              destino.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(archivos[0], destino)
+
+              git(carpeta, "config", "user.name", "github-actions[bot]")
+              git(
+                  carpeta, "config", "user.email",
+                  "41898282+github-actions[bot]@users.noreply.github.com",
+              )
+
+              git(carpeta, "add", str(destino.relative_to(carpeta)))
+
+              cambios = subprocess.run([
+                  "git", "-C", str(carpeta),
+                  "diff", "--cached", "--quiet",
+              ]).returncode
+
+              if cambios == 0:
+                  print(f"{extension}: APK sin cambios")
+              else:
+                  git(
+                      carpeta, "commit",
+                      "-m", f"Publicar APK de {extension}",
+                  )
+
+                  for intento in range(1, 9):
+                      try:
+                          git(carpeta, "pull", "--rebase", "origin", "main")
+                          git(carpeta, "push", "origin", "main")
+                          print(f"{extension}: APK publicada")
+                          break
+                      except subprocess.CalledProcessError:
+                          if intento == 8:
+                              raise
+                          print("Reintentando publicacion...", intento)
+                          time.sleep(3)
+          PY
+          
