@@ -115,6 +115,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publicar APK individual
+        if: ${{ false }}
         env:
           GH_TOKEN: ${{ secrets.KAYHELTH_REPO_TOKEN }}
           EXTENSION: ${{ matrix.extension }}
