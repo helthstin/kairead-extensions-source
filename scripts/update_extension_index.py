@@ -137,8 +137,10 @@ def main():
                     "Mismo codigo con distinta APK"
                 )
 
-            print("Version ya registrada, sin cambios")
-            return
+                      print(
+                "Version ya registrada. "
+                "Se comprobaran sus metadatos."
+                        )
 
         entry["resources"]["apkUrl"] = apk_url
         entry["versionCode"] = code
