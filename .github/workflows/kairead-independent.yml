@@ -121,7 +121,8 @@ jobs:
           test -n "$APKSIGNER"
 
           EXPECTED="$(keytool -exportcert -alias "$ALIAS" -keystore signingkey.jks -storepass "$KEY_STORE_PASSWORD" | sha256sum | cut -d' ' -f1)"
-
+          echo "=== Certificados detectados en la APK ==="
+          "$APKSIGNER" verify --print-certs "$APK"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
           echo "APK examinada: $(basename "$APK")"
           echo "Huella esperada: $EXPECTED"
