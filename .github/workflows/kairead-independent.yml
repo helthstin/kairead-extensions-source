@@ -59,7 +59,11 @@ jobs:
     needs: preparar
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
+    
+    concurrency:
+      group: kayhelthrepo-publish
+      cancel-in-progress: false
+    
     strategy:
       fail-fast: false
       matrix:
