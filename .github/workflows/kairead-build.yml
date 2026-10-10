@@ -26,11 +26,17 @@ jobs:
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Compilar extension
+      - name: Compilar extensiones Kairead
         run: |
           chmod +x ./gradlew
+
+          # DragonTranslation
           ./gradlew :src:es:dragontranslationorg:spotlessApply
           ./gradlew :src:es:dragontranslationorg:assembleRelease
+
+          # BatCave
+          ./gradlew :src:en:batcave:spotlessApply
+          ./gradlew :src:en:batcave:assembleRelease
 
           
       - name: Guardar APK de DragonTranslation
