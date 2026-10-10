@@ -90,9 +90,14 @@ jobs:
           import subprocess
           import tempfile
 
+                    import json
+
+          with open("kairead-extensions.json", encoding="utf-8") as archivo:
+              configuracion = json.load(archivo)
+
           extensiones = {
-              "DragonTranslation": "src/es/dragontranslationorg",
-              "BatCave": "src/en/batcave",
+              extension: f"src/{extension}"
+              for extension in configuracion["extensions"]
           }
 
           apks = {}
