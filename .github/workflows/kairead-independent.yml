@@ -164,16 +164,17 @@ jobs:
                       actual["resources"]["apkUrl"]
                   ).name
 
-                  if nombre_actual == Path(archivos[0]).name:
-                      print(
-                          f"{extension}: version ya publicada. "
-                          "Se conserva la APK existente."
-                      )
-                      raise SystemExit(0)
-
-              destino = carpeta / "apk" / Path(archivos[0]).name
+                                destino = carpeta / "apk" / Path(archivos[0]).name
               destino.parent.mkdir(parents=True, exist_ok=True)
-              shutil.copy2(archivos[0], destino)
+
+              if destino.exists():
+                  print(
+                      f"{extension}: APK existente. "
+                      "Se conserva y se revisan sus metadatos."
+                  )
+              else:
+                  shutil.copy2(archivos[0], destino)
+                  print(f"{extension}: nueva APK preparada")
               
               subprocess.run([
                   "python3",
