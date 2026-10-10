@@ -123,7 +123,9 @@ jobs:
           EXPECTED="$(keytool -exportcert -alias "$ALIAS" -keystore signingkey.jks -storepass "$KEY_STORE_PASSWORD" | sha256sum | cut -d' ' -f1)"
 
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
-
+          echo "APK examinada: $(basename "$APK")"
+          echo "Huella esperada: $EXPECTED"
+          echo "Huella encontrada: ${ACTUAL:-NO DETECTADA}"
           if [ -z "$ACTUAL" ] || [ "$EXPECTED" != "$ACTUAL" ]; then
             echo "ERROR: La APK no tiene la firma esperada"
             exit 1
