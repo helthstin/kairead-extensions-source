@@ -159,12 +159,8 @@ jobs:
                   None,
               )
 
-              if actual:
-                  nombre_actual = Path(
-                      actual["resources"]["apkUrl"]
-                  ).name
 
-                                destino = carpeta / "apk" / Path(archivos[0]).name
+              destino = carpeta / "apk" / Path(archivos[0]).name
               destino.parent.mkdir(parents=True, exist_ok=True)
 
               if destino.exists():
