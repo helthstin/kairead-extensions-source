@@ -1,19 +1,11 @@
 
 #!/usr/bin/env python3
-"""Actualiza una extension en el catalogo de KayHelthRepo."""
+"""Actualiza KayHelthRepo usando los metadatos reales de Gradle."""
 
 import json
 import re
 import sys
 from pathlib import Path
-
-
-def read_value(text, key):
-    match = re.search(
-        rf'\b{re.escape(key)}\s*=\s*"([^"]+)"',
-        text,
-    )
-    return match.group(1) if match else None
 
 
 def main():
@@ -30,41 +22,82 @@ def main():
         r"([a-z]{2,3})/([a-z0-9_]+)",
         extension,
     )
+
     if not match:
         raise ValueError(f"Extension invalida: {extension}")
 
     lang, slug = match.groups()
+    module = f"{lang}.{slug}"
 
-    apk_match = re.fullmatch(
-        r"tachiyomi-([a-z]{2,3})\.([a-z0-9_]+)"
-        r"-v(\d+)\.(\d+)\.(\d+)\.apk",
-        apk.name,
+    metadata_path = (
+        Path("src") / extension /
+        "build/keiyoushi-source-info.json"
     )
 
-    if not apk_match or apk_match.group(1, 2) != (lang, slug):
-        raise ValueError(f"Nombre de APK inesperado: {apk.name}")
-
-    major, minor, patch = map(
-        int, apk_match.group(3, 4, 5)
+    metadata = json.loads(
+        metadata_path.read_text(encoding="utf-8")
     )
 
-    if minor >= 100 or patch >= 1000:
-        raise ValueError("Version fuera del rango permitido")
+    package = metadata["packageName"]
+    version = metadata["versionName"]
+    code = int(metadata["versionCode"])
 
-    code = major * 100000 + minor * 1000 + patch
-    version = f"{major}.{minor}.{patch}"
-    package = (
-        f"eu.kanade.tachiyomi.extension.{lang}.{slug}"
+    expected_package = (
+        f"eu.kanade.tachiyomi.extension.{module}"
     )
+
+    if metadata["module"] != module:
+        raise ValueError("El modulo no coincide")
+
+    if package != expected_package:
+        raise ValueError("El paquete no coincide")
+
+    expected_apk = f"tachiyomi-{module}-v{version}.apk"
+
+    if apk.name != expected_apk:
+        raise ValueError(
+            f"APK incorrecta: {apk.name}. "
+            f"Se esperaba: {expected_apk}"
+        )
 
     if not apk.is_file():
         raise FileNotFoundError(apk)
 
-    published_apk = repo / "apk" / apk.name
-    if not published_apk.is_file():
-        raise FileNotFoundError(published_apk)
+    if not (repo / "apk" / apk.name).is_file():
+        raise FileNotFoundError(
+            f"APK no publicada: {apk.name}"
+        )
+
+    sources = metadata["sources"]
+
+    if not sources:
+        raise ValueError("La extension no tiene fuentes")
+
+    source_entries = [
+        {
+            "id": int(source["id"]),
+            "name": source["name"],
+            "language": source["lang"],
+            "homeUrl": source["baseUrl"],
+        }
+        for source in sources
+    ]
+
+    warnings = {
+        1: "CONTENT_WARNING_SAFE",
+        2: "CONTENT_WARNING_MIXED",
+        3: "CONTENT_WARNING_NSFW",
+    }
+
+    warning_code = int(metadata["contentWarning"])
+
+    if warning_code not in warnings:
+        raise ValueError(
+            f"Clasificacion desconocida: {warning_code}"
+        )
 
     index_path = repo / "index.json"
+
     index = json.loads(
         index_path.read_text(encoding="utf-8")
     )
@@ -77,7 +110,7 @@ def main():
     ]
 
     if len(matches) > 1:
-        raise ValueError(f"Extension duplicada: {package}")
+        raise ValueError(f"Paquete duplicado: {package}")
 
     apk_url = (
         "https://helthstin.github.io/KayHelthRepo/apk/"
@@ -86,56 +119,38 @@ def main():
 
     if matches:
         entry = matches[0]
-        current = int(entry["versionCode"])
+        previous_code = int(entry["versionCode"])
 
-        if code < current:
+        if code < previous_code:
             raise ValueError(
-                f"Version anterior bloqueada: {code} < {current}"
+                f"Version anterior bloqueada: "
+                f"{code} < {previous_code}"
             )
 
-        if code == current:
-            print(
-                "AVISO: version sin aumentar. "
-                "Kairead no detectara una actualizacion nueva."
-            )
+        if code == previous_code:
+            previous_apk = Path(
+                entry["resources"]["apkUrl"]
+            ).name
+
+            if previous_apk != apk.name:
+                raise ValueError(
+                    "Mismo codigo con distinta APK"
+                )
+
+            print("Version ya registrada, sin cambios")
+            return
 
         entry["resources"]["apkUrl"] = apk_url
         entry["versionCode"] = code
         entry["versionName"] = version
+        entry["name"] = metadata["name"]
+        entry["extensionLib"] = metadata["extensionLib"]
+        entry["contentWarning"] = warnings[warning_code]
+        entry["sources"] = source_entries
 
     else:
-        gradle = (
-            Path("src") / extension / "build.gradle.kts"
-        )
-
-        if not gradle.is_file():
-            raise FileNotFoundError(gradle)
-
-        content = gradle.read_text(encoding="utf-8")
-
-        name = read_value(content, "name")
-        lib = read_value(content, "libVersion")
-        home = read_value(content, "baseUrl")
-
-        if not name or not lib:
-            raise ValueError(
-                f"Faltan datos de la extension: {extension}"
-            )
-
-        warning = re.search(
-            r"\bcontentWarning\s*=\s*ContentWarning\.(\w+)",
-            content,
-        )
-
-        safety = warning.group(1) if warning else "SAFE"
-
-        if safety not in {"SAFE", "MIXED", "NSFW"}:
-            raise ValueError(
-                f"Clasificacion desconocida: {safety}"
-            )
-
         entry = {
-            "name": name,
+            "name": metadata["name"],
             "packageName": package,
             "resources": {
                 "apkUrl": apk_url,
@@ -144,22 +159,13 @@ def main():
                     "helthstin/kairead-extensions-source/"
                     f"main/src/{extension}/res/"
                     "mipmap-xhdpi/ic_launcher.png"
-                )
+                ),
             },
-            "extensionLib": lib,
+            "extensionLib": metadata["extensionLib"],
             "versionCode": code,
             "versionName": version,
-            "contentWarning": (
-                f"CONTENT_WARNING_{safety}"
-            ),
-            "sources": [
-                {
-                    "id": 0,
-                    "name": name,
-                    "language": lang,
-                    "homeUrl": home or ""
-                }
-            ]
+            "contentWarning": warnings[warning_code],
+            "sources": source_entries,
         }
 
         extensions.append(entry)
@@ -181,4 +187,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-  
+    
