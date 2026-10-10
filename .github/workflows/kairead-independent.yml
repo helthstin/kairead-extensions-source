@@ -142,6 +142,14 @@ jobs:
               destino = carpeta / "apk" / Path(archivos[0]).name
               destino.parent.mkdir(parents=True, exist_ok=True)
               shutil.copy2(archivos[0], destino)
+              
+              subprocess.run([
+                  "python3",
+                  "scripts/update_extension_index.py",
+                  str(carpeta),
+                  extension,
+                  archivos[0],
+              ], check=True)
 
               git(carpeta, "config", "user.name", "github-actions[bot]")
               git(
@@ -149,7 +157,11 @@ jobs:
                   "41898282+github-actions[bot]@users.noreply.github.com",
               )
 
-              git(carpeta, "add", str(destino.relative_to(carpeta)))
+              git( carpeta,
+                  "add",
+                  str(destino.relative_to(carpeta)),
+                  "index.json",
+              )
 
               cambios = subprocess.run([
                   "git", "-C", str(carpeta),
