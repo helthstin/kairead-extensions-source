@@ -140,6 +140,37 @@ jobs:
                   str(carpeta),
               ], check=True)
 
+           import json
+
+           catalogo = json.loads(
+                  (carpeta / "index.json").read_text(encoding="utf-8")
+              )
+              paquete = (
+                  "eu.kanade.tachiyomi.extension."
+                  + extension.replace("/", ".")
+              )
+
+              actual = next(
+                  (
+                      item
+                      for item in catalogo["extensionList"]["extensions"]
+                      if item["packageName"] == paquete
+                  ),
+                  None,
+              )
+
+              if actual:
+                  nombre_actual = Path(
+                      actual["resources"]["apkUrl"]
+                  ).name
+
+                  if nombre_actual == Path(archivos[0]).name:
+                      print(
+                          f"{extension}: version ya publicada. "
+                          "Se conserva la APK existente."
+                      )
+                      raise SystemExit(0)
+
               destino = carpeta / "apk" / Path(archivos[0]).name
               destino.parent.mkdir(parents=True, exist_ok=True)
               shutil.copy2(archivos[0], destino)
