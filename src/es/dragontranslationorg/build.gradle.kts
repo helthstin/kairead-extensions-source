@@ -6,7 +6,7 @@ plugins {
 
 keiyoushi {
     name = "DragonTranslation.org"
-    versionCode = 64
+    versionCode = 65
     contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
     theme = "madara"
