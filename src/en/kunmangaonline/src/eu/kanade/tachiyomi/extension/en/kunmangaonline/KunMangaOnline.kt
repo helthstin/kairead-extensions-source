@@ -14,11 +14,12 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import kotlin.time.Duration.Companion.seconds
 
 @Source
 abstract class KunMangaOnline : MadaraNoAjax() {
     override val supportsPostId = false
-    override fun OkHttpClient.Builder.configureClient() = rateLimit(2)
+    override fun OkHttpClient.Builder.configureClient() = rateLimit(1, 2.seconds)
 
     private val apiHeaders get() = headersBuilder()
         .add("Accept", "application/json")
