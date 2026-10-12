@@ -5,7 +5,7 @@ plugins {
 }
 
 keiyoushi {
-    name = "LeerMangaEsp"
+    name = "Mangalect"
     versionCode = 0
     contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
