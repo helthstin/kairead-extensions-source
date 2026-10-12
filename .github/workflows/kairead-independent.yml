@@ -205,7 +205,21 @@ jobs:
                   None,
               )
 
+              metadata_path = (
+                  Path("src") / extension /
+                  "build/keiyoushi-source-info.json"
+              )
+              metadata = json.loads(
+                  metadata_path.read_text(encoding="utf-8")
+              )
 
+              if actual and int(actual["versionCode"]) >= int(metadata["versionCode"]):
+                  print(
+                      f"{extension}: versión ya publicada "
+                      "o más reciente. Se omite."
+                  )
+                  raise SystemExit(0)
+                  
               destino = carpeta / "apk" / Path(archivos[0]).name
               destino.parent.mkdir(parents=True, exist_ok=True)
 
