@@ -5,7 +5,7 @@ plugins {
 }
 
 keiyoushi {
-    name = "Mangas.in"
+    name = "M440"
     versionCode = 0
     contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
