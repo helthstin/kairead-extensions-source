@@ -193,7 +193,7 @@ class ExtensionPlugin : Plugin<Project> {
                 variant.sources.manifests.addStaticManifestFile("AndroidManifest.xml")
                 variant.sources.manifests.addGeneratedManifestFile(manifestTask) { it.outputFile }
 
-                val filenameProvider = versionNameProvider.map { "tachiyomi-${pkgName.get()}-v$it" }
+                val filenameProvider = versionNameProvider.map { "kairead-${pkgName.get()}-v$it" }
 
                 variant.outputs.forEach { output ->
                     output.versionCode.set(androidVersionCodeProvider)
