@@ -52,7 +52,7 @@ def main():
     if package != expected_package:
         raise ValueError("El paquete no coincide")
 
-    expected_apk = f"tachiyomi-{module}-v{version}.apk"
+    expected_apk = f"kairead-{module}-v{version}.apk"
 
     if apk.name != expected_apk:
         raise ValueError(
