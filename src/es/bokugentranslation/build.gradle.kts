@@ -5,7 +5,7 @@ plugins {
 }
 
 keiyoushi {
-    name = "BokugenTranslation"
+    name = "BokuGents"
     versionCode = 18
     contentWarning = ContentWarning.SAFE
     libVersion = "1.6"
