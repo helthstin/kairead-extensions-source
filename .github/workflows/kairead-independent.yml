@@ -1,8 +1,21 @@
 
 name: Kairead Independent Build
 
+
 on:
   workflow_dispatch:
+    inputs:
+      extension:
+        description: 'Extensión a compilar (es/submanhwa o all)'
+        required: true
+        default: 'all'
+        type: string
+      publish:
+        description: 'Publicar APK después de compilar'
+        required: true
+        default: false
+        type: boolean
+        
 
 permissions:
   contents: read
