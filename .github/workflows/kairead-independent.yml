@@ -60,7 +60,7 @@ jobs:
               archivo = Path(f"src/{extension}/build.gradle.kts")
               if not archivo.is_file():
                   raise FileNotFoundError(archivo)
-                            seleccion = os.environ.get("SELECTED_EXTENSION", "all").strip()
+          seleccion = os.environ.get("SELECTED_EXTENSION", "all").strip()
 
           if seleccion != "all":
               if seleccion not in extensiones:
@@ -165,7 +165,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publicar APK individual
-        if: ${{ true }}
+        if: ${{ inputs.publish == true }}
         env:
           GH_TOKEN: ${{ secrets.KAYHELTH_REPO_TOKEN }}
           EXTENSION: ${{ matrix.extension }}
