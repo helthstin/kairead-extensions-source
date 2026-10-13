@@ -109,9 +109,11 @@ abstract class Submanhwa : KeiSource() {
             genre = box?.select(".detail-label:contains(Categor) + .detail-value a")?.joinToString { it.text() }
         }
 
-        val chapterList = document.select(".chapters-grid [class^=chapter-card]").map { element ->
-            SChapter.create().apply {
-                val a = element.selectFirst("a.chapter-link")!!
+        val chapterList = document.select(".chapters-grid [class^=chapter-card]").mapNotNull { element ->
+        val a = element.selectFirst("a.chapter-link")
+        ?: return@mapNotNull null
+
+    SChapter.create().apply {
                 name = a.text()
                 setUrlWithoutDomain(a.absUrl("href"))
 
