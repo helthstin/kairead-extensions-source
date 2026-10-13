@@ -19,12 +19,7 @@ import kotlin.time.Duration.Companion.seconds
 @Source
 abstract class KunMangaOnline : MadaraNoAjax() {
     override val supportsPostId = false
-    override fun OkHttpClient.Builder.configureClient() = apply {
-    rateLimit(1, 5.seconds) { url ->
-        url.host == "cdn.zinmanga1.com"
-    }
-    rateLimit(1, 2.seconds)
-    }
+    override fun OkHttpClient.Builder.configureClient() = rateLimit(1, 2.seconds)
 
     private val apiHeaders get() = headersBuilder()
         .add("Accept", "application/json")
