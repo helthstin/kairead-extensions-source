@@ -90,7 +90,9 @@ abstract class Submanhwa : KeiSource() {
 
         val details = SManga.create().apply {
             url = manga.url
-            title = document.selectFirst(".manga-title-centered")!!.text()
+            title = document.selectFirst(".manga-title-centered")?.text()
+            ?: document.selectFirst("h1")?.text()
+            ?: manga.title
             thumbnail_url = document.selectFirst("img")?.absUrl("src")
             description = document.selectFirst("h5:contains(Resumen) + p")?.text()
 
