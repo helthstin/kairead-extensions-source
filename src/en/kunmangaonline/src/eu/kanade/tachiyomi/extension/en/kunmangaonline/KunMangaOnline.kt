@@ -58,7 +58,7 @@ abstract class KunMangaOnline : MadaraNoAjax() {
         return allChapters
     }
 
-    override fun imageFromElement(element: Element) = listOf("data-backup", "src", "data-src", "data-lazy-src", "data-aload")
+    override fun imageFromElement(element: Element) = listOf("data-src", "data-lazy-src", "data-aload", "src", "data-backup")
         .map { element.absUrl(it) }
         .firstOrNull { it.startsWith("http") && !it.contains("${baseUrl.toHttpUrl().host}/thumb/") }
 
