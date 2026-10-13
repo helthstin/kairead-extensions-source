@@ -33,6 +33,8 @@ jobs:
 
       - name: Preparar lista
         id: lista
+        env:
+          SELECTED_EXTENSION: ${{ inputs.extension }}
         run: |
           python3 - <<'PY'
           import json
@@ -58,6 +60,14 @@ jobs:
               archivo = Path(f"src/{extension}/build.gradle.kts")
               if not archivo.is_file():
                   raise FileNotFoundError(archivo)
+                            seleccion = os.environ.get("SELECTED_EXTENSION", "all").strip()
+
+          if seleccion != "all":
+              if seleccion not in extensiones:
+                  raise ValueError(
+                      f"Extensión no registrada: {seleccion}"
+                  )
+              extensiones = [seleccion]
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as salida:
               salida.write(
