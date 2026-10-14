@@ -75,10 +75,8 @@ abstract class KunMangaOnline : MadaraNoAjax() {
     .newBuilder()
     .header("Referer", "$baseUrl/")
     .build()
-    
-    private class KunMangaRetryInterceptor : Interceptor {
 
-private class KunMangaRetryInterceptor : Interceptor {
+    private class KunMangaRetryInterceptor : Interceptor {
 
     companion object {
         private const val MAX_RETRIES = 1
