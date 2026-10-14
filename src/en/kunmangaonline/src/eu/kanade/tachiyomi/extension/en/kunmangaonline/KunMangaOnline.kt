@@ -5,20 +5,13 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import keiyoushi.annotation.Source
 import keiyoushi.network.get
-import keiyoushi.network.rateLimit
 import keiyoushi.utils.parseAs
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.Interceptor
-import okhttp3.Response
-import java.io.IOException
-import java.util.concurrent.TimeUnit
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import kotlin.time.Duration.Companion.seconds
 
 @Source
 abstract class KunMangaOnline : MadaraNoAjax() {
