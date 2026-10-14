@@ -78,10 +78,12 @@ abstract class KunMangaOnline : MadaraNoAjax() {
     
     private class KunMangaRetryInterceptor : Interceptor {
 
+private class KunMangaRetryInterceptor : Interceptor {
+
     companion object {
         private const val MAX_RETRIES = 1
-        private const val MAX_WAIT_MS = 30_000L
         private const val DEFAULT_WAIT_MS = 5_000L
+        private const val MAX_AUTO_WAIT_MS = 30_000L
 
         private val lock = Object()
         private var cooldownUntil = 0L
@@ -110,20 +112,31 @@ abstract class KunMangaOnline : MadaraNoAjax() {
                 return response
             }
 
-            val retryAfter = response.header("Retry-After")
+            val retryAfterHeader = response.header("Retry-After")
                 ?.trim()
-                ?.toLongOrNull()
-                ?.let { TimeUnit.SECONDS.toMillis(it) }
 
-            val waitMs = (
-                retryAfter ?: DEFAULT_WAIT_MS
-            ).coerceIn(1_000L, MAX_WAIT_MS)
+            val retryAfterSeconds = retryAfterHeader
+                ?.toLongOrNull()
+
+            val waitMs = when {
+                retryAfterHeader == null -> DEFAULT_WAIT_MS
+                retryAfterSeconds == null -> null
+                retryAfterSeconds < 0L -> null
+                retryAfterSeconds > MAX_AUTO_WAIT_MS / 1000L -> null
+                else -> TimeUnit.SECONDS.toMillis(retryAfterSeconds)
+            }
+
+            if (waitMs == null) {
+                return response
+            }
+
+            val safeWaitMs = waitMs.coerceAtLeast(1_000L)
 
             synchronized(lock) {
                 val now = android.os.SystemClock.elapsedRealtime()
                 cooldownUntil = maxOf(
                     cooldownUntil,
-                    now + waitMs,
+                    now + safeWaitMs,
                 )
             }
 
@@ -149,10 +162,15 @@ abstract class KunMangaOnline : MadaraNoAjax() {
 
             if (remaining <= 0L) return
 
-            Thread.sleep(minOf(remaining, 250L))
+            try {
+                Thread.sleep(minOf(remaining, 250L))
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw IOException("Espera interrumpida", e)
+            }
         }
     }
-} 
+}
 
     companion object {
         private const val POSTS_PER_PAGE = 20
