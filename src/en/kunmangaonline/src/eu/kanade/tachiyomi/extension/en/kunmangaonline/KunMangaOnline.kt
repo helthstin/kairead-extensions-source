@@ -77,7 +77,7 @@ abstract class KunMangaOnline : MadaraNoAjax() {
     .build()
 
     
-private class KunMangaRetryInterceptor : Interceptor {
+    private class KunMangaRetryInterceptor : Interceptor {
 
     companion object {
         private const val MAX_RETRIES = 1
