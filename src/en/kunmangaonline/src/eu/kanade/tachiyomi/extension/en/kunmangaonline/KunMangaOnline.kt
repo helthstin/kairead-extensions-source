@@ -174,7 +174,10 @@ abstract class KunMangaOnline : MadaraNoAjax() {
         )
     }
 
+
+        private fun waitForCooldown(chain: Interceptor.Chain) {
         while (true) {
+            
             if (chain.call().isCanceled()) {
                 throw IOException("Solicitud cancelada")
             }
