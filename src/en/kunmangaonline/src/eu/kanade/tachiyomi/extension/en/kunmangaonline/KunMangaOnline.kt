@@ -124,9 +124,13 @@ abstract class KunMangaOnline : MadaraNoAjax() {
                 else -> TimeUnit.SECONDS.toMillis(retryAfterSeconds)
             }
 
+            
             if (waitMs == null) {
-                return response
+              val error = diagnostic429(response)
+              response.close()
+              throw error
             }
+
 
             val safeWaitMs = waitMs.coerceAtLeast(1_000L)
 
@@ -138,16 +142,38 @@ abstract class KunMangaOnline : MadaraNoAjax() {
                 )
             }
 
+            
             if (retries >= MAX_RETRIES) {
-                return response
+              val error = diagnostic429(response)
+              response.close()
+              throw error
             }
+
 
             response.close()
             retries++
         }
     }
 
-    private fun waitForCooldown(chain: Interceptor.Chain) {
+    
+       private fun diagnostic429(response: Response): IOException {
+          val host = response.request.url.host
+          val server = response.header("Server")
+        ?.take(40) ?: "No informado"
+          val cfRay = response.header("CF-Ray")
+        ?.take(40) ?: "No informado"
+          val retryAfter = response.header("Retry-After")
+        ?.take(40) ?: "No informado"
+
+          return IOException(
+           "KunManga HTTP 429\n" +
+           "Host: $host\n" +
+           "Server: $server\n" +
+           "CF-Ray: $cfRay\n" +
+           "Retry-After: $retryAfter"
+        )
+    }
+
         while (true) {
             if (chain.call().isCanceled()) {
                 throw IOException("Solicitud cancelada")
