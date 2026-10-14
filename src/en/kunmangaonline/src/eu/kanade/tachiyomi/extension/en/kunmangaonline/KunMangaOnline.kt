@@ -12,6 +12,10 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.Interceptor
+import okhttp3.Response
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import kotlin.time.Duration.Companion.seconds
@@ -19,7 +23,12 @@ import kotlin.time.Duration.Companion.seconds
 @Source
 abstract class KunMangaOnline : MadaraNoAjax() {
     override val supportsPostId = false
-    override fun OkHttpClient.Builder.configureClient() = rateLimit(1, 2.seconds)
+    
+    override fun OkHttpClient.Builder.configureClient() = apply {
+    addInterceptor(KunMangaRetryInterceptor())
+    rateLimit(1, 2.seconds)
+}
+
 
     private val apiHeaders get() = headersBuilder()
         .add("Accept", "application/json")
@@ -66,6 +75,84 @@ abstract class KunMangaOnline : MadaraNoAjax() {
     .newBuilder()
     .header("Referer", "$baseUrl/")
     .build()
+    
+    private class KunMangaRetryInterceptor : Interceptor {
+
+    companion object {
+        private const val MAX_RETRIES = 1
+        private const val MAX_WAIT_MS = 30_000L
+        private const val DEFAULT_WAIT_MS = 5_000L
+
+        private val lock = Object()
+        private var cooldownUntil = 0L
+    }
+
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+
+        val isImageHost = request.url.host in setOf(
+            "cdn.zinmanga1.com",
+            "img-r2.2xstorage.com",
+        )
+
+        if (!isImageHost) {
+            return chain.proceed(request)
+        }
+
+        var retries = 0
+
+        while (true) {
+            waitForCooldown(chain)
+
+            val response = chain.proceed(request)
+
+            if (response.code != 429) {
+                return response
+            }
+
+            val retryAfter = response.header("Retry-After")
+                ?.trim()
+                ?.toLongOrNull()
+                ?.let { TimeUnit.SECONDS.toMillis(it) }
+
+            val waitMs = (
+                retryAfter ?: DEFAULT_WAIT_MS
+            ).coerceIn(1_000L, MAX_WAIT_MS)
+
+            synchronized(lock) {
+                val now = android.os.SystemClock.elapsedRealtime()
+                cooldownUntil = maxOf(
+                    cooldownUntil,
+                    now + waitMs,
+                )
+            }
+
+            if (retries >= MAX_RETRIES) {
+                return response
+            }
+
+            response.close()
+            retries++
+        }
+    }
+
+    private fun waitForCooldown(chain: Interceptor.Chain) {
+        while (true) {
+            if (chain.call().isCanceled()) {
+                throw IOException("Solicitud cancelada")
+            }
+
+            val remaining = synchronized(lock) {
+                cooldownUntil -
+                    android.os.SystemClock.elapsedRealtime()
+            }
+
+            if (remaining <= 0L) return
+
+            Thread.sleep(minOf(remaining, 250L))
+        }
+    }
+} 
 
     companion object {
         private const val POSTS_PER_PAGE = 20
