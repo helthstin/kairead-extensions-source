@@ -92,7 +92,77 @@ abstract class MangaBall :
 
     override suspend fun getPopularManga(page: Int): MangasPage = searchAdvanced(page, "", FilterList(), sortBy = "views", sortOrder = "desc")
 
-    override suspend fun getLatestUpdates(page: Int): MangasPage = searchAdvanced(page, "", FilterList(), sortBy = "lastupdate", sortOrder = "desc")
+   
+override suspend fun getLatestUpdates(page: Int): MangasPage {
+    val pageSize = 24
+    val requestedPage = page.coerceAtLeast(1)
+    val needed = requestedPage * pageSize
+
+    val latestByTitle = linkedMapOf<String, Pair<SManga, String>>()
+    var sourcePage = 1
+    var hasMoreSourcePages = true
+    val maxSourcePages = (requestedPage * 8).coerceAtMost(40)
+
+    while (
+        hasMoreSourcePages &&
+        sourcePage <= maxSourcePages &&
+        latestByTitle.size < needed
+    ) {
+        val url = "https://api.mangaball.com/api/v1/title/recently-updated"
+            .toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("page", sourcePage.toString())
+            .addQueryParameter("limit", "50")
+            .addQueryParameter(
+                "adult_mode",
+                if (hideNsfwPreference()) "no_18" else "all"
+            )
+            .build()
+
+        val response = client.get(url, headers)
+            .parseAs<SearchResponse>()
+
+        response.data.forEach { manga ->
+            val latest = manga.recentChapters
+                .asSequence()
+                .filter { chapter ->
+                    val language = chapter.lang
+                        ?.trim()
+                        ?.lowercase()
+                        ?: return@filter false
+
+                    if (lang == "es") {
+                        language == "es" || language.startsWith("es-")
+                    } else {
+                        language in siteLang
+                    }
+                }
+                .mapNotNull { it.createdAt }
+                .maxOrNull()
+                ?: return@forEach
+
+            val previous = latestByTitle[manga.id]
+
+            if (previous == null || latest > previous.second) {
+                latestByTitle[manga.id] = manga.toSManga() to latest
+            }
+        }
+
+        hasMoreSourcePages = response.hasNextPage()
+        sourcePage++
+    }
+
+    val mangas = latestByTitle.values
+        .sortedByDescending { it.second }
+        .drop((requestedPage - 1) * pageSize)
+        .take(pageSize)
+        .map { it.first }
+
+    val mayHaveMore =
+        latestByTitle.size > needed || hasMoreSourcePages
+
+    return MangasPage(mangas, mayHaveMore)
+}
 
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage = searchAdvanced(page, query, filters)
 
