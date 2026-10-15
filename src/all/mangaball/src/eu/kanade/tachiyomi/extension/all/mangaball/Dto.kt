@@ -32,7 +32,7 @@ class SearchResponse(
         data.map { it.toSManga() },
         pagination.hasNextPage()
     )
-    
+}  
 
 @Serializable
 class MangaDto(
