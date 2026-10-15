@@ -294,18 +294,6 @@ abstract class MangaBall :
     )
 }
 
-        val body = TitleIdRequest(titleId).toJsonBody()
-
-        val chapters = client.post("$baseUrl/api/v1/chapter/chapter-listing-by-title-id", headers, body)
-            .parseAs<ChapterListResponse>()
-            .data
-            .mapNotNull { it.toSChapter(siteLang) }
-
-        preferences.rememberScanlators(chapters.mapNotNull { it.scanlator })
-
-        return chapters.filterBlacklistedScanlators(preferences.scanlatorBlacklist())
-    }
-
     override fun getChapterUrl(chapter: SChapter): String = "$baseUrl/chapter-detail/${chapter.url}"
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
