@@ -255,7 +255,18 @@ abstract class MangaBall :
     }
 
     val chapters = allChapters.mapNotNull { chapter ->
-        val language = chapter.lang?.lowercase() ?: return@mapNotNull null
+        
+    val language = chapter.lang?.trim()?.lowercase()
+    ?: return@mapNotNull null
+
+    val isAllowed = if (lang == "es") {
+    language == "es" || language.startsWith("es-")
+    } else {
+    language in siteLang
+}
+
+        if (!isAllowed) return@mapNotNull null
+        
         if (language !in siteLang) return@mapNotNull null
 
         val chapterId = (
