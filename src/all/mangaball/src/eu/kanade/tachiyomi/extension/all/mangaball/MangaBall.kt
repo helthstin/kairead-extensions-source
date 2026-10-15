@@ -214,7 +214,86 @@ abstract class MangaBall :
         }
     }
 
+    
     private suspend fun getChapterList(titleId: String): List<SChapter> {
+    val allChapters = mutableListOf<NewChapterDto>()
+    var page = 1
+
+    fun kotlinx.serialization.json.JsonElement?.asText(): String? {
+        val primitive = this as? kotlinx.serialization.json.JsonPrimitive
+        return primitive?.contentOrNull
+    }
+
+    while (page <= 10) {
+        val url = "https://api.mangaball.com/api/v1/title/chapter-listing"
+            .toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("title_id", titleId)
+            .addQueryParameter("page", page.toString())
+            .addQueryParameter("limit", "2000")
+            .addQueryParameter("sort_order", "desc")
+            .addQueryParameter("language", "")
+            .addQueryParameter("search", "")
+            .addQueryParameter("user_id", "")
+            .build()
+
+        val result = client.get(url, headers)
+            .parseAs<NewChapterListResponse>()
+
+        allChapters.addAll(result.data)
+
+        val total = result.total.asText()?.toLongOrNull()
+
+        if (result.data.isEmpty() ||
+            (total != null && allChapters.size >= total)
+        ) {
+            break
+        }
+
+        page++
+    }
+
+    val chapters = allChapters.mapNotNull { chapter ->
+        val language = chapter.lang?.lowercase() ?: return@mapNotNull null
+        if (language !in siteLang) return@mapNotNull null
+
+        val chapterId = (
+            chapter.id.asText()
+                ?: chapter.alternativeId.asText()
+            )?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+
+        val number = (
+            chapter.chapterNumber.asText()
+                ?: chapter.number.asText()
+            )?.toFloatOrNull()
+
+        SChapter.create().apply {
+            url = chapterId
+            chapter_number = number ?: -1f
+
+            val rawName = chapter.name.orEmpty().trim()
+            name = if (rawName.isNotEmpty()) {
+                rawName
+            } else if (number != null) {
+                "Chapter ${number.toString().removeSuffix(".0")}"
+            } else {
+                "Chapter"
+            }
+
+            scanlator = chapter.group?.name
+        }
+    }.sortedByDescending { it.chapter_number }
+
+    preferences.rememberScanlators(
+        chapters.mapNotNull { it.scanlator }
+    )
+
+    return chapters.filterBlacklistedScanlators(
+        preferences.scanlatorBlacklist()
+    )
+}
+
         val body = TitleIdRequest(titleId).toJsonBody()
 
         val chapters = client.post("$baseUrl/api/v1/chapter/chapter-listing-by-title-id", headers, body)
