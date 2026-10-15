@@ -50,6 +50,13 @@ val recentChapters: List<RecentChapterDto> = emptyList(),
 }
 
 @Serializable
+class RecentChapterDto(
+    val lang: String? = null,
+    @SerialName("created_at")
+    val createdAt: String? = null,
+)
+
+@Serializable
 class TitleResponse(
     val data: TitleDto,
 )
