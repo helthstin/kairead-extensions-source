@@ -213,3 +213,24 @@ class ViewRequest(
     @SerialName("object_type")
     private val objectType: String,
 )
+@Serializable
+class NewChapterListResponse(
+    val data: List<NewChapterDto> = emptyList(),
+    val total: kotlinx.serialization.json.JsonElement? = null,
+)
+
+@Serializable
+class NewChapterDto(
+    val id: kotlinx.serialization.json.JsonElement? = null,
+    @SerialName("_id")
+    val alternativeId: kotlinx.serialization.json.JsonElement? = null,
+    val name: String? = null,
+    val number: kotlinx.serialization.json.JsonElement? = null,
+    @SerialName("chapter_number")
+    val chapterNumber: kotlinx.serialization.json.JsonElement? = null,
+    val volume: kotlinx.serialization.json.JsonElement? = null,
+    val lang: String? = null,
+    val group: GroupDto? = null,
+    @SerialName("created_at")
+    val createdAt: String? = null,
+)
