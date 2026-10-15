@@ -242,8 +242,8 @@ abstract class MangaBall :
             .parseAs<NewChapterListResponse>()
 
         allChapters.addAll(result.data)
-
-        val total = result.total.asText()?.toLongOrNull()
+        
+        val total = result.pagination?.total.asText()?.toLongOrNull()
 
         if (result.data.isEmpty() ||
             (total != null && allChapters.size >= total)
