@@ -220,11 +220,6 @@ class ViewRequest(
     @SerialName("object_type")
     private val objectType: String,
 )
-@Serializable
-class NewChapterListResponse(
-    val data: List<NewChapterDto> = emptyList(),
-    val total: kotlinx.serialization.json.JsonElement? = null,
-)
 
 @Serializable
 class NewChapterDto(
