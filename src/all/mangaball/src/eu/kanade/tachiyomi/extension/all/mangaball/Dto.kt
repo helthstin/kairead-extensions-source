@@ -23,6 +23,8 @@ class SearchResponse(
         private val totalPages: Int,
     ) {
         fun hasNextPage() = page < totalPages
+        
+        fun hasNextPage() = pagination.hasNextPage()
     }
 
     fun toMangasPage() = MangasPage(data.map { it.toSManga() }, pagination.hasNextPage())
