@@ -266,8 +266,6 @@ abstract class MangaBall :
 }
 
         if (!isAllowed) return@mapNotNull null
-        
-        if (language !in siteLang) return@mapNotNull null
 
         val chapterId = (
             chapter.id.asText()
