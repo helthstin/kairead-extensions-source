@@ -128,9 +128,16 @@ class AuthorDto(
     val name: String,
 )
 
+
 @Serializable
-class ChapterListResponse(
-    val data: List<ChapterDto>,
+class NewChapterListResponse(
+    val data: List<NewChapterDto> = emptyList(),
+    val pagination: NewChapterPagination? = null,
+)
+
+@Serializable
+class NewChapterPagination(
+    val total: kotlinx.serialization.json.JsonElement? = null,
 )
 
 @Serializable
