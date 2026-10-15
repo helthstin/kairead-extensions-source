@@ -34,6 +34,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.internal.closeQuietly
 import okio.IOException
+import kotlinx.serialization.json.contentOrNull
 
 @Source
 abstract class MangaBall :
