@@ -32,10 +32,14 @@ class SearchResponse(
 
 @Serializable
 class MangaDto(
-    private val id: String,
-    private val slug: String,
-    private val name: String,
-    private val image: ImageDto? = null,
+    
+val id: String,
+private val slug: String,
+private val name: String,
+private val image: ImageDto? = null,
+@SerialName("recent_chapters")
+val recentChapters: List<RecentChapterDto> = emptyList(),
+    
 ) {
     fun toSManga() = SManga.create().apply {
         url = slug
