@@ -52,6 +52,8 @@ def main():
     # MangaTaro conserva su identificador original aunque viva en src/en/.
     if extension == "en/mangataro":
         expected_package = "eu.kanade.tachiyomi.extension.all.mangataro"
+    elif extension == "en/vortexscans":
+        expected_package = "eu.kanade.tachiyomi.extension.en.arvenscans"
 
     if package != expected_package:
         raise ValueError("El paquete no coincide")
