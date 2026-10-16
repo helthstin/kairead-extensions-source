@@ -1,4 +1,3 @@
-
 {
   "extensions": [
     "es/dragontranslationorg",
@@ -16,6 +15,15 @@
     "en/mangafox",
     "es/leermangaesp",
     "es/mangamx",
-    "es/mangasin"
+    "es/mangasin",
+    "es/lmtoonline",
+    "en/likemanga",
+    "es/ragnarokscanlation",
+    "es/marmota",
+    "es/nexusscanlation",
+    "es/heavenmanga",
+    "es/mangasnosekai",
+    "es/kazokuden",
+    "all/novelcool"
   ]
 }
