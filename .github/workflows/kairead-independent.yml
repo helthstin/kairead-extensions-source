@@ -235,10 +235,14 @@ jobs:
               catalogo = json.loads(
                   (carpeta / "index.json").read_text(encoding="utf-8")
               )
-              paquete = (
-                  "eu.kanade.tachiyomi.extension."
-                  + extension.replace("/", ".")
+              metadata_path = (
+                  Path("src") / extension /
+                  "build/keiyoushi-source-info.json"
               )
+              metadata = json.loads(
+                  metadata_path.read_text(encoding="utf-8")
+              )
+              paquete = metadata["packageName"]
 
               actual = next(
                   (
@@ -247,14 +251,6 @@ jobs:
                       if item["packageName"] == paquete
                   ),
                   None,
-              )
-
-              metadata_path = (
-                  Path("src") / extension /
-                  "build/keiyoushi-source-info.json"
-              )
-              metadata = json.loads(
-                  metadata_path.read_text(encoding="utf-8")
               )
 
               if actual and int(actual["versionCode"]) >= int(metadata["versionCode"]):
