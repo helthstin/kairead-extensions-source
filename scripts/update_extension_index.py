@@ -49,10 +49,15 @@ def main():
     if metadata["module"] != module:
         raise ValueError("El modulo no coincide")
 
+    # MangaTaro conserva su identificador original aunque viva en src/en/.
+    if extension == "en/mangataro":
+        expected_package = "eu.kanade.tachiyomi.extension.all.mangataro"
+
     if package != expected_package:
         raise ValueError("El paquete no coincide")
 
-    expected_apk = f"kairead-{module}-v{version}.apk"
+    apk_module = package.removeprefix("eu.kanade.tachiyomi.extension.")
+    expected_apk = f"kairead-{apk_module}-v{version}.apk"
 
     if apk.name != expected_apk:
         raise ValueError(
