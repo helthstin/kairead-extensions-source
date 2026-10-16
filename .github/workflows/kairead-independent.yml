@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       extension:
-        description: 'Extension (ej. es/submanhwa), new9 para las nueve nuevas, o all'
+        description: 'Extension individual, new3, new9 o all'
         required: true
         default: 'all'
         type: string
@@ -73,7 +73,12 @@ jobs:
               "es/kazokuden",
               "all/novelcool",
           ]
-          if seleccion == "new9":
+          if seleccion == "new3":
+              extensiones = ["en/atsumaru", "en/bbato", "en/mangademon"]
+              faltantes = [e for e in extensiones if e not in config["extensions"]]
+              if faltantes:
+                  raise ValueError(f"Faltan extensiones: {faltantes}")
+          elif seleccion == "new9":
               faltantes = [e for e in nuevas if e not in extensiones]
               if faltantes:
                   raise ValueError(f"Faltan extensiones nuevas: {faltantes}")
