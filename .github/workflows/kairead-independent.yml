@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       extension:
-        description: 'Extensión a compilar (es/submanhwa o all)'
+        description: 'Extension (ej. es/submanhwa), new9 para las nueve nuevas, o all'
         required: true
         default: 'all'
         type: string
@@ -62,7 +62,23 @@ jobs:
                   raise FileNotFoundError(archivo)
           seleccion = os.environ.get("SELECTED_EXTENSION", "all").strip()
 
-          if seleccion != "all":
+          nuevas = [
+              "es/lmtoonline",
+              "en/likemanga",
+              "es/ragnarokscanlation",
+              "es/marmota",
+              "es/nexusscanlation",
+              "es/heavenmanga",
+              "es/mangasnosekai",
+              "es/kazokuden",
+              "all/novelcool",
+          ]
+          if seleccion == "new9":
+              faltantes = [e for e in nuevas if e not in extensiones]
+              if faltantes:
+                  raise ValueError(f"Faltan extensiones nuevas: {faltantes}")
+              extensiones = nuevas
+          elif seleccion != "all":
               if seleccion not in extensiones:
                   raise ValueError(
                       f"Extensión no registrada: {seleccion}"
