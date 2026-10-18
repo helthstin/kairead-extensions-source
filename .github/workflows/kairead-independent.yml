@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       extension:
-        description: 'Extension individual, new3, new6, new9 o all'
+        description: 'Extension individual, new3, new3scan, new6, new9 o all'
         required: true
         default: 'all'
         type: string
@@ -78,6 +78,16 @@ jobs:
               faltantes = [e for e in extensiones if e not in config["extensions"]]
               if faltantes:
                   raise ValueError(f"Faltan extensiones: {faltantes}")
+          elif seleccion == "new3scan":
+              lote = [
+                  "es/inventariooculto",
+                  "es/inmortalscan",
+                  "es/shadowmanga",
+              ]
+              faltantes = [e for e in lote if e not in extensiones]
+              if faltantes:
+                  raise ValueError(f"Faltan extensiones nuevas: {faltantes}")
+              extensiones = lote
           elif seleccion == "new6":
               lote = [
                   "en/flamecomics",
