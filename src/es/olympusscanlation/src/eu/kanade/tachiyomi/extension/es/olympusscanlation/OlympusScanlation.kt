@@ -217,7 +217,9 @@ abstract class OlympusScanlation :
 
     private var SharedPreferences.chapterNameMap: Map<String, String>
         get() = getString(CHAPTER_NAME_MAP, "{}")!!.parseAs<Map<String, String>>()
-        set(map) { edit().putString(CHAPTER_NAME_MAP, map.toJsonString()).apply() }
+        set(map) {
+            edit().putString(CHAPTER_NAME_MAP, map.toJsonString()).apply()
+        }
 
     companion object {
         private const val BASE_URL_PREF = "overrideBaseUrl"
