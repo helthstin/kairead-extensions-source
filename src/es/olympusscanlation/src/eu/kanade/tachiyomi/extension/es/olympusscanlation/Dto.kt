@@ -105,8 +105,8 @@ class PayloadChapterDto(var data: List<ChapterDto>, val meta: MetaDto)
 
 @Serializable
 class ChapterDto(
-    private val id: Int,
-    private val name: String,
+    val id: Int,
+    val name: String,
     @SerialName("published_at") private val date: String,
 ) {
     fun toSChapter(mangaId: String) = SChapter.create().apply {
