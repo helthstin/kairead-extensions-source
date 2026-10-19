@@ -48,14 +48,13 @@ abstract class OlympusScanlation :
         }
     }
 
-    private val apiBaseUrl get() = baseUrl.replace("https://", "https://panel.")
+    private val apiBaseUrl get() = baseUrl
 
     private val preferences = getPreferences()
 
     override fun OkHttpClient.Builder.configureClient(): OkHttpClient.Builder {
         fetchedDomainUrl()
         return rateLimit(1, 2.seconds) { it.host == baseUrl.toHttpUrl().host }
-            .rateLimit(2, 1.seconds) { it.host == apiBaseUrl.toHttpUrl().host }
     }
 
     private var seriesList: List<MangaDto> = emptyList()
