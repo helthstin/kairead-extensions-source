@@ -159,6 +159,7 @@ abstract class OlympusScanlation :
             result += newData.data
             page += 1
         }
+        preferences.chapterNameMap += result.associate { "$mangaId/${it.id}" to it.name }
         return result.map { it.toSChapter(mangaId) }
     }
 
@@ -169,7 +170,8 @@ abstract class OlympusScanlation :
         val mangaId = chapter.url.substringBefore("/")
         val chapterId = chapter.url.substringAfter("/")
         val mangaSlug = preferences.slugMap[mangaId.toInt()]!!
-        return "$baseUrl/series/comic-$mangaSlug/capitulo/$chapterId"
+        val chapterNumber = preferences.chapterNameMap[chapter.url] ?: chapterId
+        return "$baseUrl/series/comic-$mangaSlug/capitulo/$chapterNumber"
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
@@ -213,11 +215,16 @@ abstract class OlympusScanlation :
             edit().putString(SLUG_MAP, map.toJsonString()).apply()
         }
 
+    private var SharedPreferences.chapterNameMap: Map<String, String>
+        get() = getString(CHAPTER_NAME_MAP, "{}")!!.parseAs<Map<String, String>>()
+        set(map) { edit().putString(CHAPTER_NAME_MAP, map.toJsonString()).apply() }
+
     companion object {
         private const val BASE_URL_PREF = "overrideBaseUrl"
         private const val FETCH_DOMAIN_PREF = "fetchDomain"
 
         private const val SLUG_MAP = "slugMap"
+        private const val CHAPTER_NAME_MAP = "chapterNameMap"
 
         private const val CACHE_DURATION_MS = 60 * 60 * 1000L // 1 hour
     }
