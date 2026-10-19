@@ -170,18 +170,20 @@ abstract class OlympusScanlation :
         val mangaId = chapter.url.substringBefore("/")
         val chapterId = chapter.url.substringAfter("/")
         val mangaSlug = preferences.slugMap[mangaId.toInt()]!!
-        return "$baseUrl/capitulo/$chapterId/comic-$mangaSlug"
+        return "$baseUrl/series/comic-$mangaSlug/capitulo/$chapterId"
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        val mangaId = chapter.url.substringBefore("/")
-        val chapterId = chapter.url.substringAfter("/")
-        val mangaSlug = preferences.slugMap[mangaId.toInt()]!!
+        val document = client.get(getChapterUrl(chapter), headers = headers).asJsoup()
+        val images = document.select("div.panel img[src]")
+            .map { it.absUrl("src") }
+            .filter { it.isNotBlank() }
 
-        return client.get("$baseUrl/api/capitulo/comic-$mangaSlug/$chapterId")
-            .parseAs<PayloadPagesDto>().chapter.pages.mapIndexed { i, img ->
-                Page(i, imageUrl = img)
-            }
+        if (images.isEmpty()) {
+            throw IllegalStateException("No se encontraron imágenes en la página del capítulo")
+        }
+
+        return images.mapIndexed { index, url -> Page(index, imageUrl = url) }
     }
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
