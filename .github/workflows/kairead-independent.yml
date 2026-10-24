@@ -207,6 +207,7 @@ jobs:
           name: Kairead-${{ strategy.job-index }}
           path: src/${{ matrix.extension }}/build/outputs/**/*.apk
           if-no-files-found: error
+          retention-days: 3
 
       - name: Publicar APK individual
         if: ${{ inputs.publish == true }}
