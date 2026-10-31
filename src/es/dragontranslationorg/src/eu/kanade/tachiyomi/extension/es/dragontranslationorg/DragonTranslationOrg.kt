@@ -35,7 +35,7 @@ abstract class DragonTranslationOrg : MadaraNoAjax() {
         }
     }
 
-    override val mangaDetailsSelectorTitle = ".hero__in h1"
+    override val mangaDetailsSelectorTitle = ".hero__in h1, h1.entry-title, h1"
     override val mangaDetailsSelectorStatus = ".htags .htag"
     override val mangaDetailsSelectorDescription = ".syn p"
     override val mangaDetailsSelectorThumbnail = ".hposter img"
