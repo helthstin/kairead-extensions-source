@@ -6,6 +6,7 @@ import keiyoushi.annotation.Source
 import keiyoushi.network.rateLimit
 import keiyoushi.utils.parseAs
 import okhttp3.OkHttpClient
+import org.jsoup.parser.Parser
 import org.jsoup.nodes.Document
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -59,7 +60,7 @@ abstract class DragonTranslationOrg : MadaraNoAjax() {
         ?.data()
         ?: return emptyList()
 
-    return chapterJson.parseAs<ChapterListDto>().items.map { chapterDto ->
+    return Parser.unescapeEntities(chapterJson, false).parseAs<ChapterListDto>().items.map { chapterDto ->
         SChapter.create().apply {
             setUrlWithoutDomain(chapterDto.url)
             name = chapterDto.name
