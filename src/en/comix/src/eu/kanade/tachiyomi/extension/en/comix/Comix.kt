@@ -433,7 +433,7 @@ abstract class Comix :
         val updatedManga = if (fetchDetails) parseMangaDetails(getDocument()) else manga
         val updatedChapters = if (fetchChapters) {
             val fetched = nativeChapters?.await()
-                ?: getWebViewChapterList(manga, getDocument(), latestChapterId)
+                ?: getWebViewChapterList(manga, latestChapterId)
             val candidates = if (fetchUntilKnown) fetched + chapters else fetched
             selectChapters(candidates, deduplicateChapters, scanlatorBlacklist)
         } else {
@@ -505,7 +505,6 @@ abstract class Comix :
     @OptIn(NativeWebViewApi::class)
     private suspend fun getWebViewChapterList(
         manga: SManga,
-        document: Document,
         latestChapterId: Int?,
     ): List<SChapter> {
         val mangaSlug = manga.url.removePrefix("/")
