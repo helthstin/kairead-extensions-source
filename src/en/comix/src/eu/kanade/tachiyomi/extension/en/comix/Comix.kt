@@ -432,7 +432,7 @@ abstract class Comix :
         val updatedManga = if (fetchDetails) parseMangaDetails(getDocument()) else manga
         val updatedChapters = if (fetchChapters) {
             val fetched = nativeChapters?.await()
-                ?: getWebViewChapterList(manga, getDocument(), latestChapterId)
+                ?: getWebViewChapterList(manga, latestChapterId)
             val candidates = if (fetchUntilKnown) fetched + chapters else fetched
             selectChapters(candidates, deduplicateChapters, scanlatorBlacklist)
         } else {
@@ -503,83 +503,70 @@ abstract class Comix :
 
     private suspend fun getWebViewChapterList(
         manga: SManga,
-        document: Document,
         latestChapterId: Int?,
     ): List<SChapter> {
         val mangaSlug = manga.url.removePrefix("/")
-        val mangaId = manga.mangaId() ?: throw Exception("Refresh manga details")
-        val webViewDocument = document.clone()
-        val mainScript = webViewDocument.selectFirst(
-            "script[type=module][src*=\"/dist/main-\"]",
-        )
-        val mainScriptUrl = mainScript?.absUrl("src").orEmpty()
-        if (mainScriptUrl.isNotEmpty()) mainScript?.remove()
-        val payload = runInWebView(
-            document = webViewDocument,
-            buildScript = { passPayloadName, rejectName ->
-                $$"""
-                    (function () {
-                        const payloadKey = '__comixChapterPayload';
-                        const mangaId = $${JSONObject.quote(mangaId)};
-                        const mainScriptUrl = $${JSONObject.quote(mainScriptUrl)};
-                        const latestChapterId = $${latestChapterId ?: "null"};
-                        if (window[payloadKey]) return null;
-                        window[payloadKey] = true;
+        val url = getMangaUrl(manga)
+        val deadline = AtomicLong(System.nanoTime() + WEBVIEW_TIMEOUT_SECONDS.seconds.inWholeNanoseconds)
+        val (bridgeName, errorBridgeName) = List(2) {
+            (1..(10..20).random()).map { (('a'..'z') + ('A'..'Z')).random() }.joinToString("")
+        }
+        val payload = runWebView<String>(timeout = Duration.INFINITE) {
+            userAgent = headers["User-Agent"].orEmpty()
+            blockImages = true
 
-                        (async () => {
-                            try {
-                                if (!mainScriptUrl) throw new Error('Could not find main bundle');
-                                const mainResponse = await fetch(mainScriptUrl);
-                                if (!mainResponse.ok) throw new Error('Could not load main bundle');
-                                const mainJavaScript = await mainResponse.text();
-                                const environmentFile = mainJavaScript.match(
-                                    /from\s*["']\.\/(env-[^"']+\.js)["']/
-                                )?.[1];
-                                if (!environmentFile) throw new Error('Could not find environment bundle');
+            val emptyResponse = WebResourceResponse("text/plain", "utf-8", Buffer().inputStream())
+            interceptRequest { request ->
+                val requestUrl = request.url?.toString()?.toHttpUrlOrNull()
+                    ?: return@interceptRequest emptyResponse
+                val sourceHost = baseUrl.toHttpUrl().host
+                val allowed = requestUrl.host == sourceHost ||
+                    requestUrl.host.endsWith(".$sourceHost") ||
+                    requestUrl.host == "comix.to" ||
+                    requestUrl.host.endsWith(".comix.to") ||
+                    requestUrl.host == "comix.ws" ||
+                    requestUrl.host.endsWith(".comix.ws") ||
+                    requestUrl.host == "challenges.cloudflare.com"
+                if (allowed) null else emptyResponse
+            }
+            jsBridge(bridgeName) { resolve(it) }
+            jsBridge(errorBridgeName) { reject(Exception(it)) }
 
-                                const importBundle = new Function('url', 'return import(url)');
-                                const environment = await importBundle(
-                                    new URL(environmentFile, mainScriptUrl).href
-                                );
-                                const mangaApi = Object.values(environment).find(value =>
-                                    value &&
-                                    typeof value === 'object' &&
-                                    typeof value.chapters === 'function'
-                                );
-                                if (!mangaApi) throw new Error('Could not find manga API');
-
-                                const items = [];
-                                let page = 1;
-                                while (page <= $${MAX_CHAPTER_PAGES}) {
-                                    const response = await mangaApi.chapters(mangaId, {
-                                        page,
-                                        limit: 100,
-                                        order: { number: 'desc' }
-                                    });
-                                    const pageItems = response?.items;
-                                    if (!Array.isArray(pageItems) || pageItems.length === 0) break;
-
-                                    items.push(...pageItems);
-                                    if (pageItems.some(item => item.id === latestChapterId)) break;
-
-                                    const meta = response.meta || response.pagination || {};
-                                    const lastPage = meta.lastPage || meta.last_page || page;
-                                    if (!(meta.hasNext || page < lastPage)) break;
-                                    page++;
-                                }
-                                window.$${passPayloadName}(JSON.stringify(items));
-                            } catch (error) {
-                                window.$${rejectName}(error);
-                            }
-                        })();
-                        return null;
-                    })();
-                """.trimIndent()
-            },
-        )
-
+            val script = """
+                (() => {
+                    if (document.readyState === 'loading' || window.__kaireadChaptersStarted) return;
+                    window.__kaireadChaptersStarted = true;
+                    window.__comixHarvestOptions = {
+                        timeoutMs: 60000,
+                        settleMs: 6000,
+                        maxRounds: 1000,
+                        stopAtIds: [${latestChapterId ?: ""}]
+                    };
+                    ${asset("harvest_chapters.js")}
+                    window.__comixHarvestPromise.then(result => {
+                        if (!result.chapters || !result.chapters.length ||
+                            (!result.complete && !result.stoppedAtKnown)) {
+                            window.$errorBridgeName.post(result.error || "Chapter list is incomplete");
+                        } else {
+                            window.$bridgeName.post(JSON.stringify(result.chapters));
+                        }
+                    }).catch(error => window.$errorBridgeName.post(String(error)));
+                })();
+            """.trimIndent()
+            onPageFinished { evaluateJs(script) }
+            poll(SCRIPT_RETRY_INTERVAL_MS.milliseconds) {
+                if (System.nanoTime() >= deadline.get()) {
+                    reject(Exception("Timed out reading Comix chapters"))
+                } else {
+                    evaluateJs(script)
+                }
+            }
+            loadUrl(url)
+        }
         return payload.parseAs<List<Chapter>>().map { it.toSChapter(mangaSlug) }
     }
+
+    private fun asset(name: String) = javaClass.getResource("/assets/$name")!!.readText()
 
     private fun selectChapters(
         allChapters: List<SChapter>,
