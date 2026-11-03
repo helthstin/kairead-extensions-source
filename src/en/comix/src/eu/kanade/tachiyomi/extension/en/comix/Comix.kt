@@ -27,6 +27,14 @@ import keiyoushi.utils.int
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.runWebView
 import keiyoushi.utils.string
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonElement
@@ -44,6 +52,7 @@ import okhttp3.Response
 import okio.Buffer
 import org.json.JSONObject
 import org.jsoup.nodes.Document
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -704,36 +713,74 @@ abstract class Comix :
         return GET(urlWithoutFragment, requestHeaders)
     }
 
+    private class ReaderCapture {
+        val total = CompletableDeferred<Int>()
+        val pages = ConcurrentHashMap<Int, String>()
+
+        @Volatile
+        var error: Throwable? = null
+
+        @Volatile
+        var finished = false
+    }
+
+    private val readerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val readerCaptures = ConcurrentHashMap<String, ReaderCapture>()
+
+    private fun readerCapture(chapterUrl: String): ReaderCapture =
+        readerCaptures.compute(chapterUrl) { _, previous ->
+            previous?.takeUnless { it.finished } ?: ReaderCapture().also { capture ->
+                readerScope.launch {
+                    try {
+                        captureReaderPages(chapterUrl, capture)
+                    } catch (error: Throwable) {
+                        if (error is CancellationException) throw error
+                        capture.error = error
+                        capture.total.completeExceptionally(error)
+                    } finally {
+                        capture.finished = true
+                    }
+                }
+            }
+        }!!
+
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         getNativePageList(chapter)?.let { return it }
 
         val chapterUrl = getChapterUrl(chapter)
+        val capture = readerCapture(chapterUrl)
+        val count = withTimeout(35.seconds) { capture.total.await() }
+        return List(count) { Page(it, url = chapterUrl) }
+    }
+
+    override suspend fun getImageUrl(page: Page): String {
+        val capture = readerCapture(page.url)
+        return withTimeout(45.seconds) {
+            while (true) {
+                capture.pages[page.index]?.let { return@withTimeout it }
+                capture.error?.let { throw it }
+                if (capture.finished) throw Exception("Comix page ${page.index + 1} was not captured")
+                delay(150)
+            }
+            @Suppress("UNREACHABLE_CODE")
+            ""
+        }
+    }
+
+    private suspend fun captureReaderPages(chapterUrl: String, capture: ReaderCapture) {
         val (pageBridgeName, errorBridgeName) = List(2) {
             (1..(10..20).random()).map { (('a'..'z') + ('A'..'Z')).random() }.joinToString("")
         }
-        val pageUrls = mutableMapOf<Int, String>()
-        var totalPages = 0
-        val payload = runWebView<String>(timeout = 90.seconds) {
+        runWebView<String>(timeout = 180.seconds) {
             userAgent = headers["User-Agent"].orEmpty()
-            // Comix loads its reader pages lazily; allow images in this hidden WebView.
             blockImages = false
             jsBridge(pageBridgeName) { message ->
                 val event = JSONObject(message)
-                synchronized(pageUrls) {
-                    when (event.getString("type")) {
-                        "total" -> totalPages = event.getInt("total")
-                        "page" -> pageUrls[event.getInt("index")] = event.getString("url")
-                        "done" -> {
-                            if (totalPages > 0 && (0 until totalPages).all(pageUrls::containsKey)) {
-                                resolve(org.json.JSONArray((0 until totalPages).map(pageUrls::get)).toString())
-                            } else {
-                                reject(Exception("Comix reader loaded ${pageUrls.size}/$totalPages pages"))
-                            }
-                        }
-                        "miss" -> {
-                            // Wait until the walk finishes to report missing pages together.
-                        }
-                    }
+                when (event.getString("type")) {
+                    "total" -> capture.total.complete(event.getInt("total"))
+                    "page" -> capture.pages[event.getInt("index")] = event.getString("url")
+                    "done" -> resolve("done")
+                    "miss" -> Unit
                 }
             }
             jsBridge(errorBridgeName) { reject(Exception(it)) }
@@ -753,9 +800,6 @@ abstract class Comix :
             onPageFinished { evaluateJs(readerScript) }
             poll(SCRIPT_RETRY_INTERVAL_MS.milliseconds) { evaluateJs(readerScript) }
             loadUrl(chapterUrl)
-        }
-        return payload.parseAs<List<String>>().mapIndexed { index, url ->
-            Page(index, imageUrl = url)
         }
     }
 
