@@ -53,6 +53,7 @@ import okio.Buffer
 import org.json.JSONObject
 import org.jsoup.nodes.Document
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentSkipListSet
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
@@ -717,7 +718,9 @@ abstract class Comix :
     private class ReaderCapture {
         val total = CompletableDeferred<Int>()
         val pages = ConcurrentHashMap<Int, String>()
-        val seek = AtomicInteger(-1)
+        val pending = ConcurrentSkipListSet<Int>()
+        val retries = AtomicInteger(0)
+        val misses = ConcurrentHashMap<Int, Int>()
 
         @Volatile
         var error: Throwable? = null
@@ -756,17 +759,23 @@ abstract class Comix :
 
     override suspend fun getImageUrl(page: Page): String {
         val capture = readerCapture(page.url)
-        capture.seek.set(page.index)
-        return withTimeout(45.seconds) {
-            while (true) {
-                capture.seek.set(page.index)
-                capture.pages[page.index]?.let { return@withTimeout it }
-                capture.error?.let { throw it }
-                if (capture.finished) throw Exception("Comix page ${page.index + 1} was not captured")
-                delay(150)
+        capture.pending.add(page.index)
+        try {
+            return withTimeout(75.seconds) {
+                while (true) {
+                    capture.pages[page.index]?.let { return@withTimeout it }
+                    capture.error?.let { throw it }
+                    if (capture.misses.getOrDefault(page.index, 0) >= 3) {
+                        throw Exception("Comix could not load page ${page.index + 1} after 3 attempts")
+                    }
+                    if (capture.finished) throw Exception("Comix page ${page.index + 1} was not captured")
+                    delay(150)
+                }
+                @Suppress("UNREACHABLE_CODE")
+                ""
             }
-            @Suppress("UNREACHABLE_CODE")
-            ""
+        } finally {
+            capture.pending.remove(page.index)
         }
     }
 
@@ -774,7 +783,7 @@ abstract class Comix :
         val (pageBridgeName, errorBridgeName) = List(2) {
             (1..(10..20).random()).map { (('a'..'z') + ('A'..'Z')).random() }.joinToString("")
         }
-        runWebView<String>(timeout = 180.seconds) {
+        runWebView<String>(timeout = 240.seconds) {
             userAgent = headers["User-Agent"].orEmpty()
             blockImages = false
             jsBridge(pageBridgeName) { message ->
@@ -783,7 +792,13 @@ abstract class Comix :
                     "total" -> capture.total.complete(event.getInt("total"))
                     "page" -> capture.pages[event.getInt("index")] = event.getString("url")
                     "done" -> resolve("done")
-                    "miss" -> Unit
+                    "miss" -> {
+                        val index = event.getInt("index")
+                        if (index in capture.pending && !capture.pages.containsKey(index)) {
+                            capture.misses.merge(index, 1, Int::plus)
+                            capture.retries.incrementAndGet()
+                        }
+                    }
                 }
             }
             jsBridge(errorBridgeName) { reject(Exception(it)) }
@@ -803,7 +818,8 @@ abstract class Comix :
             onPageFinished { evaluateJs(readerScript) }
             poll(SCRIPT_RETRY_INTERVAL_MS.milliseconds) {
                 evaluateJs(readerScript)
-                evaluateJs("window.__kaireadSeek = [${capture.seek.get()}, 0];")
+                val requested = capture.pending.firstOrNull { !capture.pages.containsKey(it) } ?: -1
+                evaluateJs("window.__kaireadSeek = [$requested, ${capture.retries.get()}];")
             }
             loadUrl(chapterUrl)
         }
