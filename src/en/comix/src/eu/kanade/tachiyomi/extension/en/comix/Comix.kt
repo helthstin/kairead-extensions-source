@@ -19,6 +19,7 @@ import keiyoushi.annotation.Source
 import keiyoushi.network.get
 import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
+import keiyoushi.utils.NativeWebViewApi
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.booleanOrNull
 import keiyoushi.utils.firstInstanceOrNull
@@ -501,85 +502,83 @@ abstract class Comix :
             ?.substringBefore("-chapter-")
             ?.toIntOrNull()
 
+    @OptIn(NativeWebViewApi::class)
     private suspend fun getWebViewChapterList(
         manga: SManga,
         document: Document,
         latestChapterId: Int?,
     ): List<SChapter> {
         val mangaSlug = manga.url.removePrefix("/")
-        val mangaId = manga.mangaId() ?: throw Exception("Refresh manga details")
-        val webViewDocument = document.clone()
-        val mainScript = webViewDocument.selectFirst(
-            "script[type=module][src*=\"/dist/main-\"]",
-        )
-        val mainScriptUrl = mainScript?.absUrl("src").orEmpty()
-        if (mainScriptUrl.isNotEmpty()) mainScript?.remove()
-        val payload = runInWebView(
-            document = webViewDocument,
-            buildScript = { passPayloadName, rejectName ->
-                $$"""
-                    (function () {
-                        const payloadKey = '__comixChapterPayload';
-                        const mangaId = $${JSONObject.quote(mangaId)};
-                        const mainScriptUrl = $${JSONObject.quote(mainScriptUrl)};
-                        const latestChapterId = $${latestChapterId ?: "null"};
-                        if (window[payloadKey]) return null;
-                        window[payloadKey] = true;
-
-                        (async () => {
-                            try {
-                                if (!mainScriptUrl) throw new Error('Could not find main bundle');
-                                const mainResponse = await fetch(mainScriptUrl);
-                                if (!mainResponse.ok) throw new Error('Could not load main bundle');
-                                const mainJavaScript = await mainResponse.text();
-                                const environmentFile = mainJavaScript.match(
-                                    /from\s*["']\.\/(env-[^"']+\.js)["']/
-                                )?.[1];
-                                if (!environmentFile) throw new Error('Could not find environment bundle');
-
-                                const importBundle = new Function('url', 'return import(url)');
-                                const environment = await importBundle(
-                                    new URL(environmentFile, mainScriptUrl).href
-                                );
-                                const mangaApi = Object.values(environment).find(value =>
-                                    value &&
-                                    typeof value === 'object' &&
-                                    typeof value.chapters === 'function'
-                                );
-                                if (!mangaApi) throw new Error('Could not find manga API');
-
-                                const items = [];
-                                let page = 1;
-                                while (page <= $${MAX_CHAPTER_PAGES}) {
-                                    const response = await mangaApi.chapters(mangaId, {
-                                        page,
-                                        limit: 100,
-                                        order: { number: 'desc' }
-                                    });
-                                    const pageItems = response?.items;
-                                    if (!Array.isArray(pageItems) || pageItems.length === 0) break;
-
-                                    items.push(...pageItems);
-                                    if (pageItems.some(item => item.id === latestChapterId)) break;
-
-                                    const meta = response.meta || response.pagination || {};
-                                    const lastPage = meta.lastPage || meta.last_page || page;
-                                    if (!(meta.hasNext || page < lastPage)) break;
-                                    page++;
-                                }
-                                window.$${passPayloadName}(JSON.stringify(items));
-                            } catch (error) {
-                                window.$${rejectName}(error);
-                            }
-                        })();
-                        return null;
-                    })();
-                """.trimIndent()
-            },
-        )
-
+        val url = getMangaUrl(manga)
+        val origin = url.toHttpUrl().run { "$scheme://$host" }
+        val (bridgeName, errorBridgeName, touchBridgeName) = List(3) {
+            (1..(10..20).random()).map { (('a'..'z') + ('A'..'Z')).random() }.joinToString("")
+        }
+        val deadline = AtomicLong(System.nanoTime() + WEBVIEW_TIMEOUT_SECONDS.seconds.inWholeNanoseconds)
+        val payload = runWebView<String>(timeout = Duration.INFINITE) {
+            userAgent = headers["User-Agent"].orEmpty()
+            blockImages = true
+            val emptyResponse = WebResourceResponse("text/plain", "utf-8", Buffer().inputStream())
+            interceptRequest { request ->
+                val requestUrl = request.url?.toString()?.toHttpUrlOrNull()
+                    ?: return@interceptRequest emptyResponse
+                val sourceHost = baseUrl.toHttpUrl().host
+                val allowed = requestUrl.host == sourceHost ||
+                    requestUrl.host.endsWith(".$sourceHost") ||
+                    requestUrl.host == "comix.to" ||
+                    requestUrl.host.endsWith(".comix.to") ||
+                    requestUrl.host == "comix.ws" ||
+                    requestUrl.host.endsWith(".comix.ws") ||
+                    requestUrl.host == "challenges.cloudflare.com"
+                if (allowed) null else emptyResponse
+            }
+            webMessageBridge(bridgeName, setOf(origin)) { resolve(it) }
+            webMessageBridge(errorBridgeName, setOf(origin)) { reject(Exception(it)) }
+            webMessageBridge(touchBridgeName, setOf(origin)) { message ->
+                val points = message.split(',').mapNotNull { it.toFloatOrNull() }
+                if (points.size == 2) tap(points[0], points[1])
+            }
+            withNativeWebView { it.settings.setSupportMultipleWindows(true) }
+            poll(SCRIPT_RETRY_INTERVAL_MS.milliseconds) {
+                if (System.nanoTime() >= deadline.get()) {
+                    reject(Exception("Timed out reading Comix chapters"))
+                }
+            }
+            // The real site renders and paginates the chapter list; the HTML snapshot does not.
+            injectAtDocumentStart(
+                """
+                (() => {
+                    if (window.top !== window || window.__kaireadChaptersStarted) return;
+                    window.__kaireadChaptersStarted = true;
+                    try { localStorage.setItem("__pu1", "[" + Date.now() + "]"); } catch (e) {}
+                    window.__comixHarvestOptions = {
+                        timeoutMs: 60000,
+                        settleMs: 6000,
+                        maxRounds: 1000,
+                        stopAtIds: [${latestChapterId ?: ""}]
+                    };
+                    window.__comixNativeTap = (x, y) => window.$touchBridgeName.postMessage([x, y].join(","));
+                    ${asset("harvest_chapters.js")}
+                    window.__comixHarvestPromise.then(result => {
+                        if (!result.chapters || !result.chapters.length ||
+                            (!result.complete && !result.stoppedAtKnown)) {
+                            window.$errorBridgeName.postMessage(result.error || "Chapter list is incomplete");
+                        } else {
+                            window.$bridgeName.postMessage(JSON.stringify(result.chapters));
+                        }
+                    }).catch(error => {
+                        window.$errorBridgeName.postMessage(String(error));
+                    });
+                })();
+                """.trimIndent(),
+                setOf(origin),
+            )
+            loadUrl(url)
+        }
         return payload.parseAs<List<Chapter>>().map { it.toSChapter(mangaSlug) }
     }
+
+    private fun asset(name: String) = javaClass.getResource("/assets/$name")!!.readText()
 
     private fun selectChapters(
         allChapters: List<SChapter>,
