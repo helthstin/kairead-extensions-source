@@ -53,6 +53,7 @@ import okio.Buffer
 import org.json.JSONObject
 import org.jsoup.nodes.Document
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -716,6 +717,7 @@ abstract class Comix :
     private class ReaderCapture {
         val total = CompletableDeferred<Int>()
         val pages = ConcurrentHashMap<Int, String>()
+        val seek = AtomicInteger(-1)
 
         @Volatile
         var error: Throwable? = null
@@ -754,8 +756,10 @@ abstract class Comix :
 
     override suspend fun getImageUrl(page: Page): String {
         val capture = readerCapture(page.url)
+        capture.seek.set(page.index)
         return withTimeout(45.seconds) {
             while (true) {
+                capture.seek.set(page.index)
                 capture.pages[page.index]?.let { return@withTimeout it }
                 capture.error?.let { throw it }
                 if (capture.finished) throw Exception("Comix page ${page.index + 1} was not captured")
@@ -797,7 +801,10 @@ abstract class Comix :
                 })();
             """.trimIndent()
             onPageFinished { evaluateJs(readerScript) }
-            poll(SCRIPT_RETRY_INTERVAL_MS.milliseconds) { evaluateJs(readerScript) }
+            poll(SCRIPT_RETRY_INTERVAL_MS.milliseconds) {
+                evaluateJs(readerScript)
+                evaluateJs("window.__kaireadSeek = [${capture.seek.get()}, 0];")
+            }
             loadUrl(chapterUrl)
         }
     }
