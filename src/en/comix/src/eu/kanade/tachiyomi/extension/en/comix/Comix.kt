@@ -429,7 +429,7 @@ abstract class Comix :
             null
         }
 
-        val updatedManga = if (fetchDetails) parseMangaDetails(getDocument()) else manga
+        val updatedManga = if (fetchDetails) fetchMangaDetailsInWebView(manga) else manga
         val updatedChapters = if (fetchChapters) {
             val fetched = nativeChapters?.await()
                 ?: getWebViewChapterList(manga, latestChapterId)
@@ -452,6 +452,45 @@ abstract class Comix :
             }
         }
         SMangaUpdate(updatedManga, updatedChapters)
+    }
+
+    private suspend fun fetchMangaDetailsInWebView(manga: SManga): SManga {
+        val bridgeName = (1..16).map { ('a'..'z').random() }.joinToString("")
+        val deadline = AtomicLong(System.nanoTime() + 40.seconds.inWholeNanoseconds)
+        val payload = runWebView<String>(timeout = 45.seconds) {
+            userAgent = headers["User-Agent"].orEmpty()
+            blockImages = true
+            jsBridge(bridgeName) { resolve(it) }
+            val readDetails = """
+                (() => {
+                    if (document.readyState === 'loading') return;
+                    const raw = document.querySelector('script#initial-data')?.textContent;
+                    if (!raw) return;
+                    try {
+                        const queries = JSON.parse(raw).queries;
+                        if (!queries) return;
+                        const detail = Object.entries(queries).find(([key]) => key.includes('"detail"'))?.[1];
+                        if (detail) window.$bridgeName.post(JSON.stringify(detail));
+                    } catch (error) {}
+                })();
+            """.trimIndent()
+            onPageFinished { evaluateJs(readDetails) }
+            poll(SCRIPT_RETRY_INTERVAL_MS.milliseconds) {
+                if (System.nanoTime() >= deadline.get()) {
+                    reject(Exception("Timed out reading Comix manga details"))
+                } else {
+                    evaluateJs(readDetails)
+                }
+            }
+            loadUrl(getMangaUrl(manga))
+        }
+        return payload.parseAs<Manga>().toSManga(
+            preferences.posterQuality(),
+            preferences.alternativeNamesInDescription(),
+            preferences.scorePosition(),
+            preferences.showExtraInfo(),
+            preferences.showTagsInGenres(),
+        )
     }
 
     private fun parseMangaDetails(document: Document): SManga {
@@ -537,9 +576,9 @@ abstract class Comix :
                     if (document.readyState === 'loading' || window.__kaireadChaptersStarted) return;
                     window.__kaireadChaptersStarted = true;
                     window.__comixHarvestOptions = {
-                        timeoutMs: 60000,
+                        timeoutMs: 30000,
                         settleMs: 6000,
-                        maxRounds: 1000,
+                        maxRounds: 40,
                         stopAtIds: [${latestChapterId ?: ""}]
                     };
                     ${asset("harvest_chapters.js")}
