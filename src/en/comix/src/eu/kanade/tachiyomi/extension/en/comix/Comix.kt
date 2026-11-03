@@ -707,51 +707,56 @@ abstract class Comix :
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         getNativePageList(chapter)?.let { return it }
 
-        val document = client.get(getChapterUrl(chapter)).asJsoup()
-        val payload = runInWebView(
-            document = document,
-            buildScript = { passPayloadName, _ ->
-                """
-                (function () {
-                    const payloadKey = '__comixPagePayload';
-                    const capture = parsed => {
-                        try {
-                            if (parsed && parsed.result && parsed.result.pages) {
-                                window[payloadKey] = JSON.stringify(parsed);
-                                window.$passPayloadName(window[payloadKey]);
-                                return true;
+        val chapterUrl = getChapterUrl(chapter)
+        val (pageBridgeName, errorBridgeName) = List(2) {
+            (1..(10..20).random()).map { (('a'..'z') + ('A'..'Z')).random() }.joinToString("")
+        }
+        val pageUrls = mutableMapOf<Int, String>()
+        var totalPages = 0
+        val payload = runWebView<String>(timeout = 90.seconds) {
+            userAgent = headers["User-Agent"].orEmpty()
+            // Comix loads its reader pages lazily; allow images in this hidden WebView.
+            blockImages = false
+            jsBridge(pageBridgeName) { message ->
+                val event = JSONObject(message)
+                synchronized(pageUrls) {
+                    when (event.getString("type")) {
+                        "total" -> totalPages = event.getInt("total")
+                        "page" -> pageUrls[event.getInt("index")] = event.getString("url")
+                        "done" -> {
+                            if (totalPages > 0 && (0 until totalPages).all(pageUrls::containsKey)) {
+                                resolve(org.json.JSONArray((0 until totalPages).map(pageUrls::get)).toString())
+                            } else {
+                                reject(Exception("Comix reader loaded ${pageUrls.size}/${totalPages} pages"))
                             }
-                        } catch (e) {}
-                        return false;
-                    };
-
-                    if (window[payloadKey]) return window[payloadKey];
-
-                    try {
-                        const raw = document.querySelector('script#initial-data')?.textContent;
-                        const queries = raw && JSON.parse(raw).queries;
-                        if (queries) Object.values(queries).some(capture);
-                    } catch (e) {}
-
-                    if (window[payloadKey]) return window[payloadKey];
-                    if (JSON.parse.__comixPageCaptureInstalled) return null;
-                    const originalParse = JSON.parse;
-                    const proxiedParse = new Proxy(originalParse, {
-                        apply(target, thisArg, args) {
-                            const parsed = Reflect.apply(target, thisArg, args);
-                            capture(parsed);
-                            return parsed;
                         }
-                    });
-                    proxiedParse.__comixPageCaptureInstalled = true;
-                    JSON.parse = proxiedParse;
-                    return window[payloadKey] || null;
+                        "miss" -> {
+                            // Wait until the walk finishes to report missing pages together.
+                        }
+                    }
+                }
+            }
+            jsBridge(errorBridgeName) { reject(Exception(it)) }
+            val readerScript = """
+                (() => {
+                    if (window.__kaireadReaderStarted || document.readyState === 'loading') return;
+                    window.__kaireadReaderStarted = true;
+                    window.__kaireadSeek = [-1, 0];
+                    (${asset("chapter_pages.js")})(
+                        payload => window.$pageBridgeName.post(payload),
+                        error => window.$errorBridgeName.post(String(error)),
+                        "__kaireadSeek",
+                        []
+                    );
                 })();
-                """.trimIndent()
-            },
-        )
-
-        return buildPages(payload.parseAs())
+            """.trimIndent()
+            onPageFinished { evaluateJs(readerScript) }
+            poll(SCRIPT_RETRY_INTERVAL_MS.milliseconds) { evaluateJs(readerScript) }
+            loadUrl(chapterUrl)
+        }
+        return payload.parseAs<List<String>>().mapIndexed { index, url ->
+            Page(index, imageUrl = url)
+        }
     }
 
     private fun buildPages(response: ChapterResponse): List<Page> {
