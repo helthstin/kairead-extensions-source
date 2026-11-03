@@ -82,13 +82,7 @@ abstract class LikeMangaEngine :
             return MangasPage(mangas, results.size == SEARCH_PAGE_SIZE)
         }
 
-        val genrePath = filters.firstInstanceOrNull<GenreFilter>()?.path
-        val url = if (genrePath != null) {
-            baseUrl.toHttpUrl().resolve(genrePath)!!.newBuilder()
-        } else {
-            baseUrl.toHttpUrl().newBuilder().addPathSegment(mangaUrlDirectory)
-        }
-        return getMangaList(url, page)
+        return getMangaList(baseUrl.toHttpUrl().newBuilder().addPathSegment(mangaUrlDirectory), page)
     }
 
     private suspend fun getMangaList(url: HttpUrl.Builder, page: Int): MangasPage {
