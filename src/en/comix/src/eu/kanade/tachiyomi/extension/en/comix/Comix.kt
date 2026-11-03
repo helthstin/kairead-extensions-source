@@ -32,11 +32,11 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -727,22 +727,21 @@ abstract class Comix :
     private val readerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val readerCaptures = ConcurrentHashMap<String, ReaderCapture>()
 
-    private fun readerCapture(chapterUrl: String): ReaderCapture =
-        readerCaptures.compute(chapterUrl) { _, previous ->
-            previous?.takeUnless { it.finished } ?: ReaderCapture().also { capture ->
-                readerScope.launch {
-                    try {
-                        captureReaderPages(chapterUrl, capture)
-                    } catch (error: Throwable) {
-                        if (error is CancellationException) throw error
-                        capture.error = error
-                        capture.total.completeExceptionally(error)
-                    } finally {
-                        capture.finished = true
-                    }
+    private fun readerCapture(chapterUrl: String): ReaderCapture = readerCaptures.compute(chapterUrl) { _, previous ->
+        previous?.takeUnless { it.finished } ?: ReaderCapture().also { capture ->
+            readerScope.launch {
+                try {
+                    captureReaderPages(chapterUrl, capture)
+                } catch (error: Throwable) {
+                    if (error is CancellationException) throw error
+                    capture.error = error
+                    capture.total.completeExceptionally(error)
+                } finally {
+                    capture.finished = true
                 }
             }
-        }!!
+        }
+    }!!
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         getNativePageList(chapter)?.let { return it }
