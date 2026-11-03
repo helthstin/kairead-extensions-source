@@ -6,7 +6,7 @@ plugins {
 
 keiyoushi {
     name = "Kun Manga Online"
-    versionCode = 7
+    versionCode = 62
     contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
     theme = "madara"
