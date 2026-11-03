@@ -10,10 +10,15 @@ import keiyoushi.annotation.Source
 import keiyoushi.network.get
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.asJsoup
+import keiyoushi.utils.parseAs
 import keiyoushi.utils.tryParseDate
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import okhttp3.Headers
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -22,6 +27,8 @@ import java.util.Locale
 abstract class Submanhwa : KeiSource() {
 
     private val dateFormat = DateTimeFormatter.ofPattern("d MMM. yyyy", Locale.ENGLISH)
+    private val altDelimiter = Regex("""[|/•,;]""")
+    private val chaptersPerPage = 50
 
     override fun Headers.Builder.configureHeaders(): Headers.Builder = add("Accept-Language", "es-PE,es;q=0.9,en-US;q=0.8,en;q=0.7")
 
@@ -86,46 +93,84 @@ abstract class Submanhwa : KeiSource() {
         fetchDetails: Boolean,
         fetchChapters: Boolean,
     ): SMangaUpdate {
+        if (!fetchDetails && !fetchChapters) return SMangaUpdate(manga, chapters)
         val document = client.get(getMangaUrl(manga)).asJsoup()
 
-        val details = SManga.create().apply {
-            url = manga.url
-            title = document.selectFirst(".manga-title-centered")?.text()
-            ?: document.selectFirst("h1")?.text()
-            ?: manga.title
-            thumbnail_url = document.selectFirst("img")?.absUrl("src")
-            description = document.selectFirst("h5:contains(Resumen) + p")?.text()
+        val details = if (fetchDetails) {
+            SManga.create().apply {
+                url = manga.url
+                title = document.selectFirst(".sr-info > h1")?.text()
+                    ?: document.selectFirst("h1")?.text()
+                    ?: manga.title
+                thumbnail_url = document.selectFirst("img.sr-cover")?.absUrl("src")
+                val info = document.selectFirst(".sr-info")
+                val meta = info?.selectFirst(".sr-meta")
 
-            val box = document.selectFirst(".main-content > .boxed-modern")
+                description = buildString {
+                    info?.select(".sr-stats .sr-stat")?.takeIf { it.isNotEmpty() }?.let {
+                        append(it.joinToString(" | ") { stat -> stat.text() })
+                    }
+                    document.selectFirst(".sr-summary > p")?.text()?.takeIf { it.isNotBlank() }?.let {
+                        if (isNotEmpty()) append("\n\n")
+                        append(it)
+                    }
+                    info?.selectFirst(".sr-alt")?.text()?.split(altDelimiter)?.let { names ->
+                        if (isNotEmpty()) append("\n\n")
+                        append("Nombres alternativos:\n")
+                        names.forEach { name -> append("- ${name.trim()}\n") }
+                    }
+                }
 
-            status = when (box?.selectFirst(".detail-label:contains(Estado) + .detail-value span")?.text()?.lowercase()) {
-                "completa" -> SManga.COMPLETED
-                "en curso" -> SManga.ONGOING
-                else -> SManga.UNKNOWN
+                status = when {
+                    info?.selectFirst(".ongoing") != null -> SManga.ONGOING
+                    info?.selectFirst(".ended") != null -> SManga.COMPLETED
+                    else -> SManga.UNKNOWN
+                }
+                author = meta?.select("dt:contains(Autor(es)) + dd a")?.joinToString { it.text() }
+                artist = meta?.select("dt:contains(Artist(s)) + dd a")?.joinToString { it.text() }
+                genre = info?.select(".sr-badge.type, .sr-cat, .sr-tag")?.joinToString { it.text() }
             }
-
-            author = box?.selectFirst(".detail-label:contains(Autor) + .detail-value a")?.text()
-            artist = box?.selectFirst(".detail-label:contains(Artist) + .detail-value a")?.text()
-            genre = box?.select(".detail-label:contains(Categor) + .detail-value a")?.joinToString { it.text() }
+        } else {
+            manga
         }
 
-        val chapterList = document.select(".chapters-grid [class^=chapter-card]").mapNotNull { element ->
-        val a = element.selectFirst("a.chapter-link")
-        ?: return@mapNotNull null
+        if (!fetchChapters) return SMangaUpdate(details, chapters)
 
-    SChapter.create().apply {
-                name = a.text()
-                setUrlWithoutDomain(a.absUrl("href"))
+        val mangaId = document.selectFirst("#item-rating")?.attr("data-item")?.takeIf { it.isNotBlank() }
+            ?: throw Exception("No se pudo encontrar el ID del manga")
 
-                val date = element.selectFirst("span:has(i.glyphicon-time)")?.text()
-                    ?: element.selectFirst(".chapter-preview-meta > span")?.text()
-
-                date_upload = dateFormat.tryParseDate(date)
-            }
-        }
+        val chapterList = mutableListOf<SChapter>()
+        var page = 1
+        do {
+            val url = "$baseUrl/lista-capitulos/serie/$mangaId?orden=desc&offset=${(page - 1) * chaptersPerPage}&limit=$chaptersPerPage"
+            val chapterListDto = client.get(
+                url,
+                headers.newBuilder().set("X-Requested-With", "XMLHttpRequest").build(),
+            ).parseAs<ChapterListDto>()
+            val newChapters = parseChapterList(Jsoup.parseBodyFragment(chapterListDto.html, baseUrl))
+            if (newChapters.isEmpty()) break
+            chapterList.addAll(newChapters)
+            page++
+        } while (chapterListDto.hasNext)
 
         return SMangaUpdate(details, chapterList)
     }
+
+    private fun parseChapterList(html: Document): List<SChapter> = html.select("[id^=chapter-card]").mapNotNull { element ->
+        val chapterLink = element.selectFirst("a.lc-t") ?: return@mapNotNull null
+        SChapter.create().apply {
+            name = chapterLink.text()
+            setUrlWithoutDomain(chapterLink.absUrl("href"))
+            val date = element.selectFirst(".lc-d")?.ownText()
+            date_upload = dateFormat.tryParseDate(date?.removePrefix("🕒 "))
+        }
+    }
+
+    @Serializable
+    class ChapterListDto(
+        val html: String,
+        @SerialName("mas") val hasNext: Boolean,
+    )
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val document = client.get(getChapterUrl(chapter)).asJsoup()
