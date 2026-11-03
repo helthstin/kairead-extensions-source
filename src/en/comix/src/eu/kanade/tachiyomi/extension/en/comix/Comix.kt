@@ -19,7 +19,6 @@ import keiyoushi.annotation.Source
 import keiyoushi.network.get
 import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
-import keiyoushi.utils.NativeWebViewApi
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.booleanOrNull
 import keiyoushi.utils.firstInstanceOrNull
@@ -502,21 +501,20 @@ abstract class Comix :
             ?.substringBefore("-chapter-")
             ?.toIntOrNull()
 
-    @OptIn(NativeWebViewApi::class)
     private suspend fun getWebViewChapterList(
         manga: SManga,
         latestChapterId: Int?,
     ): List<SChapter> {
         val mangaSlug = manga.url.removePrefix("/")
         val url = getMangaUrl(manga)
-        val origin = url.toHttpUrl().run { "$scheme://$host" }
-        val (bridgeName, errorBridgeName, touchBridgeName) = List(3) {
+        val deadline = AtomicLong(System.nanoTime() + WEBVIEW_TIMEOUT_SECONDS.seconds.inWholeNanoseconds)
+        val (bridgeName, errorBridgeName) = List(2) {
             (1..(10..20).random()).map { (('a'..'z') + ('A'..'Z')).random() }.joinToString("")
         }
-        val deadline = AtomicLong(System.nanoTime() + WEBVIEW_TIMEOUT_SECONDS.seconds.inWholeNanoseconds)
         val payload = runWebView<String>(timeout = Duration.INFINITE) {
             userAgent = headers["User-Agent"].orEmpty()
             blockImages = true
+
             val emptyResponse = WebResourceResponse("text/plain", "utf-8", Buffer().inputStream())
             interceptRequest { request ->
                 val requestUrl = request.url?.toString()?.toHttpUrlOrNull()
@@ -531,47 +529,38 @@ abstract class Comix :
                     requestUrl.host == "challenges.cloudflare.com"
                 if (allowed) null else emptyResponse
             }
-            webMessageBridge(bridgeName, setOf(origin)) { resolve(it) }
-            webMessageBridge(errorBridgeName, setOf(origin)) { reject(Exception(it)) }
-            webMessageBridge(touchBridgeName, setOf(origin)) { message ->
-                val points = message.split(',').mapNotNull { it.toFloatOrNull() }
-                if (points.size == 2) tap(points[0], points[1])
-            }
-            withNativeWebView { it.settings.setSupportMultipleWindows(true) }
-            poll(SCRIPT_RETRY_INTERVAL_MS.milliseconds) {
-                if (System.nanoTime() >= deadline.get()) {
-                    reject(Exception("Timed out reading Comix chapters"))
-                }
-            }
-            // The real site renders and paginates the chapter list; the HTML snapshot does not.
-            injectAtDocumentStart(
-                """
+            jsBridge(bridgeName) { resolve(it) }
+            jsBridge(errorBridgeName) { reject(Exception(it)) }
+
+            val script = """
                 (() => {
-                    if (window.top !== window || window.__kaireadChaptersStarted) return;
+                    if (document.readyState === 'loading' || window.__kaireadChaptersStarted) return;
                     window.__kaireadChaptersStarted = true;
-                    try { localStorage.setItem("__pu1", "[" + Date.now() + "]"); } catch (e) {}
                     window.__comixHarvestOptions = {
                         timeoutMs: 60000,
                         settleMs: 6000,
                         maxRounds: 1000,
                         stopAtIds: [${latestChapterId ?: ""}]
                     };
-                    window.__comixNativeTap = (x, y) => window.$touchBridgeName.postMessage([x, y].join(","));
                     ${asset("harvest_chapters.js")}
                     window.__comixHarvestPromise.then(result => {
                         if (!result.chapters || !result.chapters.length ||
                             (!result.complete && !result.stoppedAtKnown)) {
-                            window.$errorBridgeName.postMessage(result.error || "Chapter list is incomplete");
+                            window.$errorBridgeName.post(result.error || "Chapter list is incomplete");
                         } else {
-                            window.$bridgeName.postMessage(JSON.stringify(result.chapters));
+                            window.$bridgeName.post(JSON.stringify(result.chapters));
                         }
-                    }).catch(error => {
-                        window.$errorBridgeName.postMessage(String(error));
-                    });
+                    }).catch(error => window.$errorBridgeName.post(String(error)));
                 })();
-                """.trimIndent(),
-                setOf(origin),
-            )
+            """.trimIndent()
+            onPageFinished { evaluateJs(script) }
+            poll(SCRIPT_RETRY_INTERVAL_MS.milliseconds) {
+                if (System.nanoTime() >= deadline.get()) {
+                    reject(Exception("Timed out reading Comix chapters"))
+                } else {
+                    evaluateJs(script)
+                }
+            }
             loadUrl(url)
         }
         return payload.parseAs<List<Chapter>>().map { it.toSChapter(mangaSlug) }
