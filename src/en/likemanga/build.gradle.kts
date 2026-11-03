@@ -7,7 +7,7 @@ plugins {
 keiyoushi {
     name = "LikeManga"
     versionCode = 1
-    contentWarning = ContentWarning.SAFE
+    contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
 
     source {
