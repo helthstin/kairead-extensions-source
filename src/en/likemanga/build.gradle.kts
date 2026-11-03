@@ -6,17 +6,18 @@ plugins {
 
 keiyoushi {
     name = "LikeManga"
-    versionCode = 0
-    contentWarning = ContentWarning.SAFE
+    versionCode = 1
+    contentWarning = ContentWarning.MIXED
     libVersion = "1.6"
 
     source {
         lang = "en"
-        baseUrl = "https://likemanga.ink"
+        baseUrl = "https://mgread.io"
     }
 
     deeplink {
         host("likemanga.io")
+        host("mgread.io")
         path("/..*")
     }
 }
