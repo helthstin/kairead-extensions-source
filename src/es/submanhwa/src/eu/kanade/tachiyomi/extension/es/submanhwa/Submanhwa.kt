@@ -27,8 +27,8 @@ import java.util.Locale
 abstract class Submanhwa : KeiSource() {
 
     private val dateFormat = DateTimeFormatter.ofPattern("d MMM. yyyy", Locale.ENGLISH)
-    private val ALT_DELIMITER = Regex("""[|/•,;]""")
-    private val CHAPTERS_PER_PAGE = 50
+    private val altDelimiter = Regex("""[|/•,;]""")
+    private val chaptersPerPage = 50
 
     override fun Headers.Builder.configureHeaders(): Headers.Builder = add("Accept-Language", "es-PE,es;q=0.9,en-US;q=0.8,en;q=0.7")
 
@@ -114,7 +114,7 @@ abstract class Submanhwa : KeiSource() {
                         if (isNotEmpty()) append("\n\n")
                         append(it)
                     }
-                    info?.selectFirst(".sr-alt")?.text()?.split(ALT_DELIMITER)?.let { names ->
+                    info?.selectFirst(".sr-alt")?.text()?.split(altDelimiter)?.let { names ->
                         if (isNotEmpty()) append("\n\n")
                         append("Nombres alternativos:\n")
                         names.forEach { name -> append("- ${name.trim()}\n") }
@@ -142,7 +142,7 @@ abstract class Submanhwa : KeiSource() {
         val chapterList = mutableListOf<SChapter>()
         var page = 1
         do {
-            val url = "$baseUrl/lista-capitulos/serie/$mangaId?orden=desc&offset=${(page - 1) * CHAPTERS_PER_PAGE}&limit=$CHAPTERS_PER_PAGE"
+            val url = "$baseUrl/lista-capitulos/serie/$mangaId?orden=desc&offset=${(page - 1) * chaptersPerPage}&limit=$chaptersPerPage"
             val chapterListDto = client.get(
                 url,
                 headers.newBuilder().set("X-Requested-With", "XMLHttpRequest").build(),
