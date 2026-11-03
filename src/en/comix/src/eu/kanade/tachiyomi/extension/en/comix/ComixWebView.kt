@@ -108,7 +108,6 @@ class ComixWebViewScope<T> internal constructor(
         get() = webView.settings.userAgentString
         set(value) {
             webView.settings.userAgentString = value
-
         }
 
     /** Runs [block] on every navigation start. */
