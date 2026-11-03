@@ -11,26 +11,20 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
-import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.network.post
 import keiyoushi.source.KeiSource
-import keiyoushi.utils.aesCbc
-import keiyoushi.utils.aesDecrypt
 import keiyoushi.utils.asJsoup
 import keiyoushi.utils.attrOrNull
 import keiyoushi.utils.decodeHex
-import keiyoushi.utils.firstInstanceOrNull
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.textOrNull
-import keiyoushi.utils.toJsonElement
 import keiyoushi.utils.toJsonRequestBody
 import keiyoushi.utils.tryParseDateTime
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
@@ -40,6 +34,9 @@ import org.jsoup.select.Elements
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
 
@@ -79,7 +76,7 @@ abstract class LikeMangaEngine :
                 .addQueryParameter("term", query)
                 .addQueryParameter("page", page.toString())
                 .build()
-            val results = client.get(url, Fetch.XHR).parseAs<List<SearchDto>>()
+            val results = client.get(url).parseAs<List<SearchDto>>()
             // Search also returns other post types (stickers); the endpoint has no type filter
             val mangas = results.filter { it.postType == "manga" }.map { it.toSManga() }
             return MangasPage(mangas, results.size == SEARCH_PAGE_SIZE)
@@ -96,7 +93,7 @@ abstract class LikeMangaEngine :
 
     private suspend fun getMangaList(url: HttpUrl.Builder, page: Int): MangasPage {
         if (page > 1) url.addPathSegment("page").addPathSegment(page.toString())
-        val document = client.get(url.addPathSegment("").build(), Fetch.DOCUMENT).asJsoup()
+        val document = client.get(url.addPathSegment("").build()).asJsoup()
 
         val mangas = document.select("div.manga-card, div.manga-item-grid > div.uk-panel").map { card ->
             SManga.create().apply {
@@ -128,7 +125,7 @@ abstract class LikeMangaEngine :
         fetchChapters: Boolean,
     ): SMangaUpdate {
         val mangaUrl = getMangaUrl(manga)
-        val document = client.get(mangaUrl, Fetch.DOCUMENT).asJsoup()
+        val document = client.get(mangaUrl).asJsoup()
 
         manga.apply {
             title = document.selectFirst("h1")!!.text()
@@ -152,7 +149,7 @@ abstract class LikeMangaEngine :
 
     override val supportsRelatedMangas = true
 
-    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = client.get(getMangaUrl(manga), Fetch.DOCUMENT).asJsoup()
+    override suspend fun fetchRelatedMangaList(manga: SManga): List<SManga> = client.get(getMangaUrl(manga)).asJsoup()
         .select("div.manga-item-slider")
         .map { card ->
             SManga.create().apply {
@@ -221,12 +218,12 @@ abstract class LikeMangaEngine :
             .addQueryParameter("per_page", "50")
             .addQueryParameter("paged", page.toString())
             .build()
-        return client.get(url, Fetch.XHR).parseAs()
+        return client.get(url).parseAs()
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val chapterUrl = getChapterUrl(chapter)
-        val document = client.get(chapterUrl, Fetch.DOCUMENT).asJsoup()
+        val document = client.get(chapterUrl).asJsoup()
         if (document.selectFirst("div.lock-card") != null) return emptyList()
 
         val scripts = document.scriptContents()
@@ -238,9 +235,10 @@ abstract class LikeMangaEngine :
         } else {
             fetchChapterKey(payload, chapterUrl)
         }
-        val content = Base64.decode(payload.ciphertext, Base64.DEFAULT)
-            .aesDecrypt(aesCbc(key, payload.iv.decodeHex()))
-            .decodeToString()
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding").apply {
+            init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(payload.iv.decodeHex()))
+        }
+        val content = cipher.doFinal(Base64.decode(payload.ciphertext, Base64.DEFAULT)).decodeToString()
 
         return Jsoup.parseBodyFragment(content, baseUrl).select("img, canvas[data-enc]").toPages()
     }
@@ -263,7 +261,7 @@ abstract class LikeMangaEngine :
     private suspend fun fetchChapterKey(payload: EncryptedPayloadDto, chapterUrl: String): ByteArray {
         val keyHeaders = headers.newBuilder().set("Referer", chapterUrl).build()
         val body = ChapterKeyRequestDto(payload.cid!!, payload.e!!, payload.g!!).toJsonRequestBody()
-        return client.post("$baseUrl/wp-json/initmanga/v1/chapter-key", keyHeaders, Fetch.XHR, body)
+        return client.post("$baseUrl/wp-json/initmanga/v1/chapter-key", keyHeaders, body)
             .parseAs<ChapterKeyResponseDto>().key.decodeHex()
     }
 
@@ -278,23 +276,6 @@ abstract class LikeMangaEngine :
     private fun Element.imgAttr(): String? = sequenceOf("data-original-src", "data-src", "src")
         .map { absUrl(it) }
         .firstOrNull { it.isNotEmpty() && !it.startsWith("data:") }
-
-    override val supportsFilterFetching = true
-
-    override suspend fun fetchFilterData(): JsonElement {
-        val url = baseUrl.toHttpUrl().newBuilder().addPathSegment(mangaUrlDirectory).addPathSegment("").build()
-        val document = client.get(url, Fetch.DOCUMENT).asJsoup()
-        return document.select("ul.uk-list.uk-text-small a")
-            .map { GenreData(it.ownText(), it.absUrl("href").toHttpUrl().encodedPath) }
-            .toJsonElement()
-    }
-
-    override fun getFilterList(data: JsonElement?): FilterList {
-        val genres = data?.parseAs<List<GenreData>>().orEmpty()
-        if (genres.isEmpty()) return FilterList()
-        val options = listOf(allGenresLabel to null) + genres.map { it.name to it.path }
-        return FilterList(GenreFilter(genreFilterName, options))
-    }
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         SwitchPreferenceCompat(screen.context).apply {
