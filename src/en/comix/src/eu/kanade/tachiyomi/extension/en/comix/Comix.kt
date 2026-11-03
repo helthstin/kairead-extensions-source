@@ -803,7 +803,7 @@ abstract class Comix :
             onPageFinished { evaluateJs(readerScript) }
             poll(SCRIPT_RETRY_INTERVAL_MS.milliseconds) {
                 evaluateJs(readerScript)
-                evaluateJs("window.__kaireadSeek = [${capture.seek.get()\}, 0];")
+                evaluateJs("window.__kaireadSeek = [${capture.seek.get()}, 0];")
             }
             loadUrl(chapterUrl)
         }
