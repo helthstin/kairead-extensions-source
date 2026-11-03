@@ -18,6 +18,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import java.time.format.DateTimeFormatter
 
 @Source
@@ -33,7 +34,7 @@ abstract class HeavenManga : KeiSource() {
             SManga.create().apply {
                 title = element.select("div.manga-name").text()
                 setUrlWithoutDomain(element.select("a").attr("abs:href"))
-                thumbnail_url = element.select("img").attr("abs:src")
+                thumbnail_url = element.selectFirst("img")?.coverUrl()
             }
         }
         val hasNextPage = document.selectFirst("ul.pagination a[rel=next]") != null
@@ -52,7 +53,8 @@ abstract class HeavenManga : KeiSource() {
                         val mangaUrl = attr("abs:href").substringBeforeLast("/")
                         setUrlWithoutDomain(mangaUrl)
                         title = selectFirst(".captitle")?.text() ?: text()
-                        thumbnail_url = mangaUrl.replace("/manga/", "/uploads/manga/") + "/cover/cover_250x350.jpg"
+                        thumbnail_url = element.selectFirst("img")?.coverUrl()
+                            ?: mangaUrl.replace("/manga/", "/uploads/manga/") + "/cover/cover_250x350.jpg"
                     }
                 }
             }
@@ -119,7 +121,7 @@ abstract class HeavenManga : KeiSource() {
                     title = it.text()
                     setUrlWithoutDomain(it.attr("abs:href"))
                 }
-                thumbnail_url = element.select("img").attr("abs:data-src")
+                thumbnail_url = element.selectFirst("img")?.coverUrl()
             }
         }
         val hasNextPage = document.selectFirst("ul.pagination a[rel=next]") != null
@@ -144,7 +146,7 @@ abstract class HeavenManga : KeiSource() {
             title = manga.title
             document.select("div.tab-summary").let { info ->
                 genre = info.select("div.genres-content a").joinToString { it.text() }
-                thumbnail_url = info.select("div.summary_image img").attr("abs:data-src")
+                thumbnail_url = info.selectFirst("div.summary_image img")?.coverUrl()
             }
             description = document.select("div.description-summary p").text()
         }
@@ -203,6 +205,17 @@ abstract class HeavenManga : KeiSource() {
         AlphabeticoFilter(),
         ListaCompletasFilter(),
     )
+
+    private fun Element.coverUrl(): String? = listOf(
+        "data-src",
+        "data-lazy-src",
+        "data-original",
+        "data-original-src",
+        "data-cfsrc",
+        "src",
+    ).firstNotNullOfOrNull { attribute ->
+        absUrl(attribute).takeIf { it.startsWith("http") }
+    }
 
     private fun String.removeTrailingComma() = replace(TRAILING_COMMA_REGEX, "$1")
 
