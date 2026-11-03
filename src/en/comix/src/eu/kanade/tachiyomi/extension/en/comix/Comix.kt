@@ -727,7 +727,7 @@ abstract class Comix :
                             if (totalPages > 0 && (0 until totalPages).all(pageUrls::containsKey)) {
                                 resolve(org.json.JSONArray((0 until totalPages).map(pageUrls::get)).toString())
                             } else {
-                                reject(Exception("Comix reader loaded ${pageUrls.size}/${totalPages} pages"))
+                                reject(Exception("Comix reader loaded ${pageUrls.size}/$totalPages pages"))
                             }
                         }
                         "miss" -> {
