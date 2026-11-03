@@ -783,9 +783,10 @@ abstract class Comix :
         val (pageBridgeName, errorBridgeName) = List(2) {
             (1..(10..20).random()).map { (('a'..'z') + ('A'..'Z')).random() }.joinToString("")
         }
-        runWebView<String>(timeout = 240.seconds) {
+        runComixWebView<String>(timeout = 240.seconds) {
             userAgent = headers["User-Agent"].orEmpty()
             blockImages = false
+            attachReaderSurface()
             jsBridge(pageBridgeName) { message ->
                 val event = JSONObject(message)
                 when (event.getString("type")) {
@@ -821,7 +822,7 @@ abstract class Comix :
                 val requested = capture.pending.firstOrNull { !capture.pages.containsKey(it) } ?: -1
                 evaluateJs("window.__kaireadSeek = [$requested, ${capture.retries.get()}];")
             }
-            loadUrl(chapterUrl)
+            loadUrl(chapterUrl, mapOf("X-Requested-With" to "com.android.chrome"))
         }
     }
 
