@@ -9,7 +9,6 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
-import keiyoushi.network.Fetch
 import keiyoushi.network.get
 import keiyoushi.network.rateLimit
 import keiyoushi.source.KeiSource
@@ -172,14 +171,8 @@ abstract class CapibaraTraductor : KeiSource() {
     // The site's reader decodes the page tokens and removes decoy pages, read its result
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val (chapterSlug, seriesSlug, organizationSlug) = chapter.url.split("/", limit = 3)
-        val seriesPath = if (chapter.memo["jointId"] != null) {
-            "joint/${chapter.memo["jointSlug"]?.stringOrNull ?: seriesSlug}"
-        } else {
-            "manga-custom/$seriesSlug"
-        }
-
         // The site's login errors and empty chapters, which the reader only shows on screen
-        val pages = client.get("$baseUrl/api/$seriesPath/chapter/$chapterSlug/pages", getScanHeaders(organizationSlug), Fetch.XHR)
+        val pages = client.get("$baseUrl/api/manga-custom/$seriesSlug/chapter/$chapterSlug/pages", getScanHeaders(organizationSlug))
             .parseAs<Data<JsonArray>>()
             .data
         if (pages.isEmpty()) return emptyList()
