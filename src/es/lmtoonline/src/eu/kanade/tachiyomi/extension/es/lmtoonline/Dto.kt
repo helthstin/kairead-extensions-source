@@ -9,6 +9,8 @@ import kotlin.time.Instant
 @Serializable
 class MangaList(
     val mangas: List<Manga>,
+    val total: Int,
+    val pageSize: Int,
 )
 
 @Serializable
