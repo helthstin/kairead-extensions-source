@@ -77,5 +77,4 @@ abstract class Lmtos : KeiSource() {
             Page(index, imageUrl = url)
         }
     }
-
 }
