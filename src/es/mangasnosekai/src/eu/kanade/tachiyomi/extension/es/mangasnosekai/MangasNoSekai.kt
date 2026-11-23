@@ -32,6 +32,7 @@ abstract class MangasNoSekai : MadaraNoAjax() {
     }
 
     override fun archiveSelector() = "div.page-listing-item > div.row > div"
+    override fun nextPageSelector() = "a.next.page-numbers, a.nextpostslink, div.nav-previous, #navigation-ajax"
     override val archiveUrlSelector = "a[href]"
     override val archiveTitleSelector = "figcaption"
 
