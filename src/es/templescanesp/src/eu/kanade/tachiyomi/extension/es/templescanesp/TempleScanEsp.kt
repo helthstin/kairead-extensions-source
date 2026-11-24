@@ -1,6 +1,12 @@
 package eu.kanade.tachiyomi.extension.es.templescanesp
 
 import eu.kanade.tachiyomi.multisrc.madara.Madara
+import eu.kanade.tachiyomi.source.model.MangasPage
+import eu.kanade.tachiyomi.source.model.SManga
+import keiyoushi.network.get
+import keiyoushi.utils.parseAs
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import keiyoushi.annotation.Source
 import keiyoushi.network.post
 import keiyoushi.network.rateLimit
@@ -19,6 +25,40 @@ abstract class TempleScanEsp : Madara() {
     override val supportsPostId = false
     override val chapterDateFormat = DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.forLanguageTag("es"))
     override val mangaSubString = "serie"
+
+    // Aedex replaced its former Madara site with a Catharsis backend.
+    // Initial migration stage: restore paginated catalog retrieval without touching the old reader.
+    private val aedexUrl = "https://aedexnox.com"
+    private val aedexApi = "$aedexUrl/api/backend"
+
+    private suspend fun aedexCatalog(page: Int, order: String): MangasPage {
+        val url = "$aedexApi/mangas".toHttpUrl().newBuilder()
+            .addQueryParameter("page", page.toString())
+            .addQueryParameter("limit", "24")
+            .addQueryParameter("sort", order)
+            .build()
+
+        val requestHeaders = headersBuilder()
+            .set("System", "aedex")
+            .set("X-FK-Sistema", "1")
+            .build()
+
+        val result = client.get(url, requestHeaders).parseAs<AedexCatalogDto>()
+        val mangas = result.data.map { entry ->
+            SManga.create().apply {
+                url = entry.slug
+                title = entry.name
+                thumbnail_url = entry.cover?.let {
+                    aedexUrl.toHttpUrl().resolve("/assets/$it")?.toString()
+                }
+            }
+        }
+        return MangasPage(mangas, page < result.totalPages)
+    }
+
+    override suspend fun getPopularManga(page: Int): MangasPage = aedexCatalog(page, "-n_visitas")
+
+    override suspend fun getLatestUpdates(page: Int): MangasPage = aedexCatalog(page, "-fecha_ultimo_capitulo")
 
     override fun OkHttpClient.Builder.configureClient() = rateLimit(3, 1.seconds) { it.host == baseUrl.toHttpUrl().host }
 
@@ -65,3 +105,16 @@ abstract class TempleScanEsp : Madara() {
 
     override val supportsFilterFetching get() = true
 }
+
+@Serializable
+private class AedexCatalogDto(
+    val data: List<AedexCatalogMangaDto>,
+    @SerialName("total_pages") val totalPages: Int,
+)
+
+@Serializable
+private class AedexCatalogMangaDto(
+    val slug: String,
+    @SerialName("nombre") val name: String,
+    @SerialName("portada_url") val cover: String? = null,
+)
