@@ -21,7 +21,6 @@ class SearchResponse(
         private val page: Int,
         @SerialName("total_pages")
         private val totalPages: Int,
-    
     ) {
         fun hasNextPage() = page < totalPages
     }
@@ -30,20 +29,18 @@ class SearchResponse(
 
     fun toMangasPage() = MangasPage(
         data.map { it.toSManga() },
-        pagination.hasNextPage()
+        pagination.hasNextPage(),
     )
-}  
+}
 
 @Serializable
 class MangaDto(
-    
-val id: String,
-private val slug: String,
-private val name: String,
-private val image: ImageDto? = null,
-@SerialName("recent_chapters")
-val recentChapters: List<RecentChapterDto> = emptyList(),
-    
+    val id: String,
+    private val slug: String,
+    private val name: String,
+    private val image: ImageDto? = null,
+    @SerialName("recent_chapters")
+    val recentChapters: List<RecentChapterDto> = emptyList(),
 ) {
     fun toSManga() = SManga.create().apply {
         url = slug
@@ -144,7 +141,6 @@ class TagDto(
 class AuthorDto(
     val name: String,
 )
-
 
 @Serializable
 class NewChapterListResponse(
