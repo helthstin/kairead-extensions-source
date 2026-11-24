@@ -9,7 +9,10 @@ import eu.kanade.tachiyomi.source.ConfigurableSource
 import keiyoushi.annotation.Source
 import keiyoushi.network.rateLimit
 import keiyoushi.utils.getPreferences
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
+import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.time.Duration.Companion.seconds
@@ -28,6 +31,28 @@ abstract class TaurusFansub :
     override val mangaDetailsSelectorTitle = "h1.post-title"
     override val mangaDetailsSelectorStatus = "div.manga-status span:last-child"
     override val mangaDetailsSelectorDescription = "div.summary__content p"
+
+    override fun archiveManga(element: Element, id: String) = super.archiveManga(element, id)?.apply {
+        thumbnail_url = archiveCover(element)
+    }
+
+    override fun parseSearchCards(document: Document): List<SearchCard> = document.select(searchCardSelector()).mapNotNull { element ->
+        val link = element.selectFirst(archiveUrlSelector) ?: return@mapNotNull null
+        val href = link.attr("abs:href").takeIf(String::isNotBlank) ?: return@mapNotNull null
+        SearchCard(link.text(), href.toHttpUrl().encodedPath, archiveCover(element))
+    }
+
+    private fun archiveCover(element: Element): String? {
+        val images = element.select(".manga-thumb img, .item-thumb img, .tab-thumb img, img")
+        return images.asSequence().flatMap { image ->
+            sequenceOf("data-src", "data-lazy-src", "data-lzl-src", "data-cfsrc", "data-manga-src", "src")
+                .map { image.attr("abs:$it") }
+                .plus(sequenceOf(imageFromElement(image).orEmpty()))
+        }.firstOrNull { url ->
+            url.startsWith("http") && !url.contains("logo", ignoreCase = true) &&
+                !url.contains("placeholder", ignoreCase = true) && !url.contains("templo", ignoreCase = true)
+        }
+    }
 
     private val preferences: SharedPreferences = getPreferences()
 
