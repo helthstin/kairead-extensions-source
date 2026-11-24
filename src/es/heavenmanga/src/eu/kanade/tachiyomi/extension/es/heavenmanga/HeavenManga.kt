@@ -17,11 +17,41 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.Interceptor
+import okhttp3.OkHttpClient
+import okhttp3.Response
+import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import java.io.IOException
 import java.time.format.DateTimeFormatter
 
 @Source
 abstract class HeavenManga : KeiSource() {
+
+    override fun OkHttpClient.Builder.configureClient() = addInterceptor(::resolveRecentCover)
+
+    // Recent entries do not reliably expose the filename of the actual cover.
+    private fun resolveRecentCover(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        if (request.url.host != baseUrl.toHttpUrl().host || request.url.queryParameter(COVER_LOOKUP) != "1") {
+            return chain.proceed(request)
+        }
+        val detailUrl = request.url.newBuilder().removeAllQueryParameters(COVER_LOOKUP).build()
+        val detailRequest = request.newBuilder().url(detailUrl).header("Accept", "text/html").build()
+        val cover = chain.proceed(detailRequest).use { response ->
+            if (!response.isSuccessful) throw IOException("Cover page HTTP ${response.code}")
+            val document = Jsoup.parse(response.body.string(), response.request.url.toString())
+            findDetailCover(document) ?: throw IOException("Series cover not found")
+        }
+        return chain.proceed(request.newBuilder().url(cover).header("Referer", detailUrl.toString()).build())
+    }
+
+    private fun findDetailCover(document: Document): String? {
+        val image = document.selectFirst("div.summary_image img") ?: return null
+        return sequenceOf("data-src", "data-lazy-src", "src")
+            .map { image.attr("abs:$it") }
+            .firstOrNull { it.startsWith("https://") || it.startsWith("http://") }
+    }
 
     override suspend fun getPopularManga(page: Int): MangasPage {
         val document = client.get("$baseUrl/top?orderby=views&pages=$page").asJsoup()
@@ -52,7 +82,9 @@ abstract class HeavenManga : KeiSource() {
                         val mangaUrl = attr("abs:href").substringBeforeLast("/")
                         setUrlWithoutDomain(mangaUrl)
                         title = selectFirst(".captitle")?.text() ?: text()
-                        thumbnail_url = mangaUrl.replace("/manga/", "/uploads/manga/") + "/cover/cover_250x350.jpg"
+                        thumbnail_url = mangaUrl.toHttpUrl().newBuilder()
+                            .addQueryParameter(COVER_LOOKUP, "1")
+                            .build().toString()
                     }
                 }
             }
@@ -144,7 +176,7 @@ abstract class HeavenManga : KeiSource() {
             title = manga.title
             document.select("div.tab-summary").let { info ->
                 genre = info.select("div.genres-content a").joinToString { it.text() }
-                thumbnail_url = info.select("div.summary_image img").attr("abs:data-src")
+                thumbnail_url = findDetailCover(document) ?: manga.thumbnail_url
             }
             description = document.select("div.description-summary p").text()
         }
@@ -207,6 +239,7 @@ abstract class HeavenManga : KeiSource() {
     private fun String.removeTrailingComma() = replace(TRAILING_COMMA_REGEX, "$1")
 
     companion object {
+        private const val COVER_LOOKUP = "kairead_cover"
         private val dateFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
         val PAGES_REGEX = """pUrl\s*=\s*(\[[\s\S]*?\])\s*;""".toRegex()
         val TRAILING_COMMA_REGEX = """,\s*(\}|\])""".toRegex()
