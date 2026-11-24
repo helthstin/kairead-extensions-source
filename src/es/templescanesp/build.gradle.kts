@@ -6,7 +6,7 @@ plugins {
 
 keiyoushi {
     name = "Temple Scan"
-    versionCode = 14
+    versionCode = 16
     contentWarning = ContentWarning.NSFW
     libVersion = "1.6"
     theme = "madara"
@@ -14,8 +14,12 @@ keiyoushi {
     source {
         lang = "es"
         baseUrl {
-            custom("https://aedexnox.syakaihoken-web.com")
+            custom("https://aedexnox.com")
         }
         versionId = 4
     }
+}
+
+dependencies {
+    implementation(project(":lib:aedex"))
 }
