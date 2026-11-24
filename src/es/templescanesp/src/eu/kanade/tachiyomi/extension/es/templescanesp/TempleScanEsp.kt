@@ -1,6 +1,12 @@
 package eu.kanade.tachiyomi.extension.es.templescanesp
 
 import eu.kanade.tachiyomi.multisrc.madara.Madara
+import eu.kanade.tachiyomi.source.model.MangasPage
+import eu.kanade.tachiyomi.source.model.SManga
+import keiyoushi.network.get
+import keiyoushi.utils.parseAs
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import keiyoushi.annotation.Source
 import keiyoushi.network.post
 import keiyoushi.network.rateLimit
@@ -16,6 +22,37 @@ import kotlin.time.Duration.Companion.seconds
 
 @Source
 abstract class TempleScanEsp : Madara() {
+    // Aedex no longer serves Madara's WordPress AJAX catalog.
+    override suspend fun getPopularManga(page: Int): MangasPage = fetchAedexCatalog(page, "-n_visitas")
+
+    override suspend fun getLatestUpdates(page: Int): MangasPage = fetchAedexCatalog(page, "-fecha_ultimo_capitulo")
+
+    private suspend fun fetchAedexCatalog(page: Int, sort: String): MangasPage {
+        val url = baseUrl.toHttpUrl().newBuilder()
+            .addPathSegments("api/backend/mangas")
+            .addQueryParameter("page", page.toString())
+            .addQueryParameter("limit", "24")
+            .addQueryParameter("sort", sort)
+            .build()
+        val requestHeaders = headersBuilder()
+            .set("System", "aedex")
+            .set("X-FK-Sistema", "1")
+            .build()
+        val result = client.get(url, requestHeaders).parseAs<TempleCatalogResponse>()
+        return MangasPage(
+            result.data.map { entry ->
+                SManga.create().apply {
+                    url = "/comic/${entry.slug}"
+                    title = entry.nombre
+                    thumbnail_url = entry.portadaUrl?.let {
+                        baseUrl.toHttpUrl().resolve("/assets/$it")?.toString()
+                    }
+                }
+            },
+            page < result.totalPages,
+        )
+    }
+
     override val supportsPostId = false
     override val chapterDateFormat = DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.forLanguageTag("es"))
     override val mangaSubString = "serie"
@@ -65,3 +102,16 @@ abstract class TempleScanEsp : Madara() {
 
     override val supportsFilterFetching get() = true
 }
+
+@Serializable
+private class TempleCatalogResponse(
+    val data: List<TempleCatalogManga>,
+    @SerialName("total_pages") val totalPages: Int,
+)
+
+@Serializable
+private class TempleCatalogManga(
+    val slug: String,
+    val nombre: String,
+    @SerialName("portada_url") val portadaUrl: String? = null,
+)
