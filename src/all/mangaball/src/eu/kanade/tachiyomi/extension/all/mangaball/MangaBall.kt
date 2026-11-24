@@ -13,7 +13,6 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
 import keiyoushi.network.get
-import keiyoushi.network.post
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.JSON_MEDIA_TYPE
 import keiyoushi.utils.firstInstanceOrNull
@@ -25,6 +24,7 @@ import keiyoushi.utils.toJsonString
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.contentOrNull
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl
@@ -34,7 +34,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.internal.closeQuietly
 import okio.IOException
-import kotlinx.serialization.json.contentOrNull
 
 @Source
 abstract class MangaBall :
@@ -92,77 +91,7 @@ abstract class MangaBall :
 
     override suspend fun getPopularManga(page: Int): MangasPage = searchAdvanced(page, "", FilterList(), sortBy = "views", sortOrder = "desc")
 
-   
-override suspend fun getLatestUpdates(page: Int): MangasPage {
-    val pageSize = 24
-    val requestedPage = page.coerceAtLeast(1)
-    val needed = requestedPage * pageSize
-
-    val latestByTitle = linkedMapOf<String, Pair<SManga, String>>()
-    var sourcePage = 1
-    var hasMoreSourcePages = true
-    val maxSourcePages = (requestedPage * 8).coerceAtMost(40)
-
-    while (
-        hasMoreSourcePages &&
-        sourcePage <= maxSourcePages &&
-        latestByTitle.size < needed
-    ) {
-        val url = "https://api.mangaball.com/api/v1/title/recently-updated"
-            .toHttpUrl()
-            .newBuilder()
-            .addQueryParameter("page", sourcePage.toString())
-            .addQueryParameter("limit", "50")
-            .addQueryParameter(
-                "adult_mode",
-                if (hideNsfwPreference()) "no_18" else "all"
-            )
-            .build()
-
-        val response = client.get(url, headers)
-            .parseAs<SearchResponse>()
-
-        response.data.forEach { manga ->
-            val latest = manga.recentChapters
-                .asSequence()
-                .filter { chapter ->
-                    val language = chapter.lang
-                        ?.trim()
-                        ?.lowercase()
-                        ?: return@filter false
-
-                    if (lang == "es") {
-                        language == "es" || language.startsWith("es-")
-                    } else {
-                        language in siteLang
-                    }
-                }
-                .mapNotNull { it.createdAt }
-                .maxOrNull()
-                ?: return@forEach
-
-            val previous = latestByTitle[manga.id]
-
-            if (previous == null || latest > previous.second) {
-                latestByTitle[manga.id] = manga.toSManga() to latest
-            }
-        }
-
-        hasMoreSourcePages = response.hasNextPage()
-        sourcePage++
-    }
-
-    val mangas = latestByTitle.values
-        .sortedByDescending { it.second }
-        .drop((requestedPage - 1) * pageSize)
-        .take(pageSize)
-        .map { it.first }
-
-    val mayHaveMore =
-        latestByTitle.size > needed || hasMoreSourcePages
-
-    return MangasPage(mangas, mayHaveMore)
-}
+    override suspend fun getLatestUpdates(page: Int): MangasPage = searchAdvanced(page, "", FilterList(), sortBy = "lastupdate", sortOrder = "desc", translatedOnly = true)
 
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage = searchAdvanced(page, query, filters)
 
@@ -172,6 +101,7 @@ override suspend fun getLatestUpdates(page: Int): MangasPage {
         filters: FilterList,
         sortBy: String? = null,
         sortOrder: String? = null,
+        translatedOnly: Boolean = false,
     ): MangasPage {
         val sort = filters.firstInstanceOrNull<SortFilter>()
 
@@ -188,6 +118,9 @@ override suspend fun getLatestUpdates(page: Int): MangasPage {
             }
             addQueryParameter("tag_mode", filters.firstInstanceOrNull<TagModeFilter>()?.selected ?: "AND")
             addQueryParameter("adult_mode", if (hideNsfwPreference()) "no_18" else "all")
+            if (translatedOnly) {
+                addQueryParameter("chapterLanguage", siteLang.joinToString(","))
+            }
 
             if (query.isNotBlank()) {
                 addQueryParameter("keyword", query.trim())
@@ -264,7 +197,6 @@ override suspend fun getLatestUpdates(page: Int): MangasPage {
 
         return if (fetchChapters && titleId != null) {
             coroutineScope {
-                
                 val mangaDeferred = async { if (fetchDetails) getMangaDetails(titleId) else manga }
                 val chaptersDeferred = async { getChapterList(titleId) }
 
@@ -273,8 +205,7 @@ override suspend fun getLatestUpdates(page: Int): MangasPage {
         } else {
             // Entries saved by older versions have no id in memo, so one details fetch is needed to
             // resolve it. Returning that manga persists the id, saving the fetch on later refreshes.
-            
-            val updatedManga = if (titleId == null || fetchDetails) getMangaDetails(titleId ?: manga.url) else manga      
+            val updatedManga = if (titleId == null || fetchDetails) getMangaDetails(titleId ?: manga.url) else manga
             val updatedChapters = if (fetchChapters) {
                 getChapterList(updatedManga.memo.getString("id"))
             } else {
@@ -285,94 +216,92 @@ override suspend fun getLatestUpdates(page: Int): MangasPage {
         }
     }
 
-    
     private suspend fun getChapterList(titleId: String): List<SChapter> {
-    val allChapters = mutableListOf<NewChapterDto>()
-    var page = 1
+        val allChapters = mutableListOf<NewChapterDto>()
+        var page = 1
 
-    fun kotlinx.serialization.json.JsonElement?.asText(): String? {
-        val primitive = this as? kotlinx.serialization.json.JsonPrimitive
-        return primitive?.contentOrNull
-    }
-
-    while (page <= 10) {
-        val url = "https://api.mangaball.com/api/v1/title/chapter-listing"
-            .toHttpUrl()
-            .newBuilder()
-            .addQueryParameter("title_id", titleId)
-            .addQueryParameter("page", page.toString())
-            .addQueryParameter("limit", "2000")
-            .addQueryParameter("sort_order", "desc") 
-            .addQueryParameter( "language", if (lang == "en") "en" else "",)
-            .addQueryParameter("search", "")
-            .addQueryParameter("user_id", "")
-            .build()
-
-        val result = client.get(url, headers)
-            .parseAs<NewChapterListResponse>()
-
-        allChapters.addAll(result.data)
-        
-        val total = result.pagination?.total.asText()?.toLongOrNull()
-
-        if (result.data.isEmpty() ||
-            (total != null && allChapters.size >= total)
-        ) {
-            break
+        fun kotlinx.serialization.json.JsonElement?.asText(): String? {
+            val primitive = this as? kotlinx.serialization.json.JsonPrimitive
+            return primitive?.contentOrNull
         }
 
-        page++
-    }
+        while (page <= 10) {
+            val url = "https://api.mangaball.com/api/v1/title/chapter-listing"
+                .toHttpUrl()
+                .newBuilder()
+                .addQueryParameter("title_id", titleId)
+                .addQueryParameter("page", page.toString())
+                .addQueryParameter("limit", "2000")
+                .addQueryParameter("sort_order", "desc")
+                .addQueryParameter("language", if (lang == "en") "en" else "")
+                .addQueryParameter("search", "")
+                .addQueryParameter("user_id", "")
+                .build()
 
-    val chapters = allChapters.mapNotNull { chapter ->
-        
-    val language = chapter.lang?.trim()?.lowercase()
-    ?: return@mapNotNull null
+            val result = client.get(url, headers)
+                .parseAs<NewChapterListResponse>()
 
-    val isAllowed = if (lang == "es") {
-    language == "es" || language.startsWith("es-")
-    } else {
-    language in siteLang
-}
+            allChapters.addAll(result.data)
 
-        if (!isAllowed) return@mapNotNull null
+            val total = result.pagination?.total.asText()?.toLongOrNull()
 
-        val chapterId = (
-            chapter.id.asText()
-                ?: chapter.alternativeId.asText()
-            )?.takeIf { it.isNotBlank() }
-                ?: return@mapNotNull null
-
-        val number = (
-            chapter.chapterNumber.asText()
-                ?: chapter.number.asText()
-            )?.toFloatOrNull()
-
-        SChapter.create().apply {
-            url = chapterId
-            chapter_number = number ?: -1f
-
-            val rawName = chapter.name.orEmpty().trim()
-            name = if (rawName.isNotEmpty()) {
-                rawName
-            } else if (number != null) {
-                "Chapter ${number.toString().removeSuffix(".0")}"
-            } else {
-                "Chapter"
+            if (result.data.isEmpty() ||
+                (total != null && allChapters.size >= total)
+            ) {
+                break
             }
 
-            scanlator = chapter.group?.name
+            page++
         }
-    }.sortedByDescending { it.chapter_number }
 
-    preferences.rememberScanlators(
-        chapters.mapNotNull { it.scanlator }
-    )
+        val chapters = allChapters.mapNotNull { chapter ->
+            val language = chapter.lang?.trim()?.lowercase()
+                ?: return@mapNotNull null
 
-    return chapters.filterBlacklistedScanlators(
-        preferences.scanlatorBlacklist()
-    )
-}
+            val isAllowed = if (lang == "es") {
+                language == "es" || language.startsWith("es-")
+            } else {
+                language in siteLang
+            }
+
+            if (!isAllowed) return@mapNotNull null
+
+            val chapterId = (
+                chapter.id.asText()
+                    ?: chapter.alternativeId.asText()
+                )?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+
+            val number = (
+                chapter.chapterNumber.asText()
+                    ?: chapter.number.asText()
+                )?.toFloatOrNull()
+
+            SChapter.create().apply {
+                url = chapterId
+                chapter_number = number ?: -1f
+
+                val rawName = chapter.name.orEmpty().trim()
+                name = if (rawName.isNotEmpty()) {
+                    rawName
+                } else if (number != null) {
+                    "Chapter ${number.toString().removeSuffix(".0")}"
+                } else {
+                    "Chapter"
+                }
+
+                scanlator = chapter.group?.name
+            }
+        }.sortedByDescending { it.chapter_number }
+
+        preferences.rememberScanlators(
+            chapters.mapNotNull { it.scanlator },
+        )
+
+        return chapters.filterBlacklistedScanlators(
+            preferences.scanlatorBlacklist(),
+        )
+    }
 
     override fun getChapterUrl(chapter: SChapter): String = "$baseUrl/chapter-detail/${chapter.url}"
 
