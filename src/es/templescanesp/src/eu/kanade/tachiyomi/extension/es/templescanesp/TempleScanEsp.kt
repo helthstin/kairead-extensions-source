@@ -53,7 +53,7 @@ abstract class TempleScanEsp : Madara() {
         return MangasPage(
             result.data.map { item ->
                 SManga.create().apply {
-                    url = "/serie/${item.slug}"
+                    this.url = "/serie/${item.slug}"
                     title = item.nombre
                     thumbnail_url = item.cover?.let { baseUrl.toHttpUrl().resolve("/assets/$it")?.toString() }
                     memo = mangaMemo("/comic/${item.slug}", emptyList())
