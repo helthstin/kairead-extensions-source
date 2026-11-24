@@ -50,14 +50,17 @@ abstract class TempleScanEsp : Madara() {
             .set("Accept", "application/json")
             .build()
         val result = client.get(url, apiHeaders).parseAs<CatalogPage>()
-        return MangasPage(result.data.map { item ->
-            SManga.create().apply {
-                url = "/serie/${item.slug}"
-                title = item.nombre
-                thumbnail_url = item.cover?.let { baseUrl.toHttpUrl().resolve("/assets/$it")?.toString() }
-                memo = mangaMemo("/comic/${item.slug}", emptyList())
-            }
-        }, page < result.totalPages)
+        return MangasPage(
+            result.data.map { item ->
+                SManga.create().apply {
+                    url = "/serie/${item.slug}"
+                    title = item.nombre
+                    thumbnail_url = item.cover?.let { baseUrl.toHttpUrl().resolve("/assets/$it")?.toString() }
+                    memo = mangaMemo("/comic/${item.slug}", emptyList())
+                }
+            },
+            page < result.totalPages,
+        )
     }
 
     override fun getMangaUrl(manga: SManga): String {
