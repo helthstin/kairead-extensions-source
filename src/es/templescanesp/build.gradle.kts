@@ -6,16 +6,16 @@ plugins {
 
 keiyoushi {
     name = "Temple Scan"
-    versionCode = 14
+    versionCode = 77
     contentWarning = ContentWarning.NSFW
     libVersion = "1.6"
-    theme = "madara"
+    theme = "catharsis"
 
     source {
         lang = "es"
         baseUrl {
-            custom("https://aedexnox.syakaihoken-web.com")
+            custom("https://aedexnox.com")
         }
-        versionId = 4
+        id = 3451196845457607700L
     }
 }
