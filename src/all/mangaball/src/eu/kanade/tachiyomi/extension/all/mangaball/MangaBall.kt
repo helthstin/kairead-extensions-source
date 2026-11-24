@@ -13,7 +13,6 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.model.SMangaUpdate
 import keiyoushi.annotation.Source
 import keiyoushi.network.get
-import keiyoushi.network.post
 import keiyoushi.source.KeiSource
 import keiyoushi.utils.JSON_MEDIA_TYPE
 import keiyoushi.utils.firstInstanceOrNull
@@ -92,8 +91,7 @@ abstract class MangaBall :
 
     override suspend fun getPopularManga(page: Int): MangasPage = searchAdvanced(page, "", FilterList(), sortBy = "views", sortOrder = "desc")
 
-    override suspend fun getLatestUpdates(page: Int): MangasPage =
-        searchAdvanced(page, "", FilterList(), sortBy = "lastupdate", sortOrder = "desc", translatedOnly = true)
+    override suspend fun getLatestUpdates(page: Int): MangasPage = searchAdvanced(page, "", FilterList(), sortBy = "lastupdate", sortOrder = "desc", translatedOnly = true)
 
     override suspend fun getSearchMangaList(page: Int, query: String, filters: FilterList): MangasPage = searchAdvanced(page, query, filters)
 
