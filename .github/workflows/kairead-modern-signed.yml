@@ -1,0 +1,133 @@
+name: Kairead Modern - Signed Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      extension:
+        description: Registered Modern extension
+        required: true
+        default: es/aedex
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kairead-modern-signed-test
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout reviewed Modern source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: helthstin/kayhelthrepomodern
+          ref: 9e2f355e46d113f484f7717e1f0451df542b471f
+          persist-credentials: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c
+        with:
+          cache-read-only: true
+      - name: Validate selection and compile without private keys
+        env:
+          EXTENSION: ${{ inputs.extension }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          ext = os.environ["EXTENSION"]
+          allowed = json.loads(Path("kairead-extensions.json").read_text())["extensions"]
+          if not re.fullmatch(r"[a-z]{2,3}/[a-z0-9_]+", ext) or ext not in allowed:
+              raise SystemExit("Extension not registered")
+          p = Path("settings.gradle.kts")
+          old = "\nloadAllIndividualExtensions()\n"
+          s = p.read_text()
+          if s.count(old) != 1:
+              raise SystemExit("Cannot select extension modules")
+          lang, slug = ext.split("/")
+          p.write_text(s.replace(old, f'\nloadIndividualExtension("{lang}", "{slug}")\n', 1))
+          PY
+          chmod +x gradlew
+          TASK=":src:${EXTENSION//\//:}"
+          ./gradlew "${TASK}:spotlessCheck" "${TASK}:assembleRelease" "${TASK}:lintRelease" --no-daemon
+          mkdir -p unsigned
+          python3 - <<'PY'
+          import json, os, shutil
+          from pathlib import Path
+          ext = os.environ["EXTENSION"]
+          root = Path("src") / ext / "build"
+          meta = json.loads((root / "keiyoushi-source-info.json").read_text())
+          if ext == "es/aedex":
+              assert meta["packageName"] == "eu.kanade.tachiyomi.extension.es.templescanesp"
+              assert meta["sources"][0]["id"] == 3451196845457607826
+              assert int(meta["versionCode"]) > 106071
+          apk, = (root / "outputs/apk/release").glob("*.apk")
+          shutil.copyfile(apk, "unsigned/extension.apk")
+          Path("unsigned/metadata.json").write_text(json.dumps(meta))
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: modern-build-input
+          path: unsigned/
+          retention-days: 1
+          if-no-files-found: error
+
+  sign:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: modern-build-input
+          path: input
+      - name: Sign on separate runner with original Kairead key
+        env:
+          SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          ALIAS: ${{ secrets.ALIAS }}
+        run: |
+          set -euo pipefail
+          test -n "$SIGNING_KEY_BASE64"
+          test -n "$KEY_STORE_PASSWORD"
+          test -n "$KEY_PASSWORD"
+          test -n "$ALIAS"
+          umask 077
+          KEY="$(mktemp)"
+          trap 'rm -f "$KEY"' EXIT
+          printf '%s' "$SIGNING_KEY_BASE64" | base64 --decode > "$KEY"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$APKSIGNER"
+          mkdir -p signed
+          NAME="$(python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          m = json.loads(Path("input/metadata.json").read_text())
+          pkg = m["packageName"].removeprefix("eu.kanade.tachiyomi.extension.")
+          version = m["versionName"]
+          assert re.fullmatch(r"[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+", pkg)
+          assert re.fullmatch(r"1\.[46]\.\d+", version)
+          print(f"kairead-{pkg}-v{version}.apk")
+          PY
+          )"
+          "$APKSIGNER" sign --ks "$KEY" --ks-key-alias "$ALIAS" --ks-pass env:KEY_STORE_PASSWORD --key-pass env:KEY_PASSWORD --out "signed/$NAME" input/extension.apk
+          EXPECTED="$(keytool -exportcert -alias "$ALIAS" -keystore "$KEY" -storepass:env KEY_STORE_PASSWORD | sha256sum | cut -d' ' -f1)"
+          ACTUAL="$("$APKSIGNER" verify --print-certs "signed/$NAME" | sed -n 's/.*certificate SHA-256 digest: //p' | head -n 1)"
+          test -n "$ACTUAL"
+          test "$EXPECTED" = "$ACTUAL"
+          echo "Original Kairead certificate verified"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: Kairead-Modern-Signed
+          path: signed/*.apk
+          retention-days: 3
+          if-no-files-found: error
