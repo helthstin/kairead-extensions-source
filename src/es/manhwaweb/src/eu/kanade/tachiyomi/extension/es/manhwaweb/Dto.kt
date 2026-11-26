@@ -86,7 +86,6 @@ class ComicDetailsDto(
     @SerialName("_categoris") private val genres: List<Map<Int, String>>,
     @SerialName("autor") private val authors: List<CreatorDto>,
     @SerialName("artista") private val artists: List<CreatorDto>,
-    
     val chapters: List<ChapterDto>,
 ) {
     fun toSManga() = SManga.create().apply {
@@ -102,7 +101,6 @@ class ComicDetailsDto(
         genre = genres.joinToString { it.values.first() }
         author = authors.joinToString { it.name }.ifEmpty { null }
         artist = artists.joinToString { it.name }.ifEmpty { null }
-
         initialized = true
     }
 
@@ -113,7 +111,6 @@ class ComicDetailsDto(
     }
 }
 
-
 @Serializable
 class CreatorDto(
     val name: String,
@@ -122,24 +119,14 @@ class CreatorDto(
 @Serializable
 class ChapterDto(
     @SerialName("chapter") val number: Float,
-    @SerialName("link_raw") val rawUrl: String? = null,
-    private val link: String? = null,
-    private val create: Long?,
-    private val versions: List<ChapterVersionDto>? = null,
-) {
-    val espUrl get() = link ?: versions?.firstOrNull()?.link
-    val createdAt get() = create ?: versions?.firstOrNull()?.create
-}
-
-@Serializable
-class ChapterVersionDto(
-    val link: String? = null,
-    val create: Long? = null,
+    val versions: List<ChapterVersionDto>,
 )
 
 @Serializable
-class PayloadPageDto(
-    @SerialName("chapter") val data: PageDto,
+class ChapterVersionDto(
+    val link: String,
+    val joint: List<CreatorDto> = emptyList(),
+    val create: Long? = null,
 )
 
 @Serializable
