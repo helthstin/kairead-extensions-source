@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: helthstin/kayhelthrepomodern
-          ref: 9e2f355e46d113f484f7717e1f0451df542b471f
+          ref: f5f2365c587151a559f64298f1701ca145a9b2a0
           persist-credentials: false
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880
         with:
