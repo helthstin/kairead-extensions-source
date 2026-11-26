@@ -1,0 +1,97 @@
+name: Publish tested M440 Modern
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: kairead-modern-m440-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Download tested signed APK
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: Kairead-Modern-Signed
+          path: signed
+          run-id: '45822281784'
+          github-token: ${{ github.token }}
+      - name: Download corresponding metadata
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: modern-build-input
+          path: input
+          run-id: '45822281784'
+          github-token: ${{ github.token }}
+      - name: Validate tested package and original certificate
+        env:
+          SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          ALIAS: ${{ secrets.ALIAS }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+          m = json.loads(Path("input/metadata.json").read_text())
+          assert m["module"] == "es.mangasin"
+          assert m["packageName"] == "eu.kanade.tachiyomi.extension.es.mangasin"
+          assert m["name"] == "M440"
+          assert len(m["sources"]) == 1
+          assert int(m["sources"][0]["id"]) == 1954354064815247113
+          assert m["sources"][0]["name"] == "M440"
+          assert m["sources"][0]["lang"] == "es"
+          assert int(m["versionCode"]) > 106000
+          assert re.fullmatch(r"1\.6\.\d+", m["versionName"])
+          apk, = Path("signed").glob("*.apk")
+          assert apk.name == f'kairead-es.mangasin-v{m["versionName"]}.apk'
+          p = Path("src/es/mangasin/build/keiyoushi-source-info.json")
+          p.parent.mkdir(parents=True, exist_ok=True)
+          p.write_text(json.dumps(m))
+          PY
+          umask 077
+          KEY="$(mktemp)"
+          trap 'rm -f "$KEY"' EXIT
+          printf '%s' "$SIGNING_KEY_BASE64" | base64 --decode > "$KEY"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          EXPECTED="$(keytool -exportcert -alias "$ALIAS" -keystore "$KEY" -storepass:env KEY_STORE_PASSWORD | sha256sum | cut -d' ' -f1)"
+          ACTUAL="$("$APKSIGNER" verify --print-certs signed/*.apk | sed -n 's/.*certificate SHA-256 digest: //p' | head -n 1)"
+          test -n "$ACTUAL"
+          test "$EXPECTED" = "$ACTUAL"
+      - name: Publish tested APK and catalog entry
+        env:
+          GH_TOKEN: ${{ secrets.KAYHELTH_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          git clone https://github.com/helthstin/KayHelthRepo.git catalog
+          python3 - <<'PY'
+          import json, shutil
+          from pathlib import Path
+          m = json.loads(Path("input/metadata.json").read_text())
+          entries = json.loads(Path("catalog/index.json").read_text())["extensionList"]["extensions"]
+          entry, = [e for e in entries if e["packageName"] == m["packageName"]]
+          assert int(entry["versionCode"]) < int(m["versionCode"])
+          assert [int(s["id"]) for s in entry["sources"]] == [1954354064815247113]
+          apk, = Path("signed").glob("*.apk")
+          dest = Path("catalog/apk") / apk.name
+          assert not dest.exists() or dest.read_bytes() == apk.read_bytes()
+          shutil.copy2(apk, dest)
+          PY
+          python3 scripts/update_extension_index.py catalog es/mangasin signed/*.apk
+          git -C catalog config user.name 'github-actions[bot]'
+          git -C catalog config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C catalog add index.json apk/kairead-es.mangasin-*.apk
+          git -C catalog commit -m 'Publish tested M440 Modern APK'
+          git -C catalog push origin main
