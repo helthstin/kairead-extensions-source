@@ -18,9 +18,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @Source
 abstract class ManhwaWeb : KeiSource() {
-    
+
     private val apiUrl = "https://api.manhwaweb.com"
-    
 
     override fun Headers.Builder.configureHeaders() = add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8")
 
@@ -107,27 +106,34 @@ abstract class ManhwaWeb : KeiSource() {
 
     private suspend fun getDetailsBySlug(slug: String) = client.get("$apiUrl/manhwa/see/$slug").parseAs<ComicDetailsDto>()
 
-    private fun parseChapterList(comic: ComicDetailsDto) = comic.chapters.filterNot {
-        it.createdAt == null || (it.espUrl == null && it.rawUrl == null)
-    }.map { it.toSChapter(comic.id, comic.slug) }
+    private fun parseChapterList(comic: ComicDetailsDto) = comic.chapters
+        .flatMap { chapter -> chapter.versions.mapNotNull { it.toSChapter(chapter.number, comic.id, comic.slug) } }
         .sortedByDescending { it.chapter_number }
 
-    private fun ChapterDto.toSChapter(id: String, realId: String) = SChapter.create().apply {
-        name = "Capítulo ${number.toString().removeSuffix(".0")}"
-        chapter_number = number
-        date_upload = createdAt ?: 0
-        val url = (espUrl ?: rawUrl!!).replace(id, realId)
-        setUrlWithoutDomain(url)
-        scanlator = if (espUrl != null) "Esp" else "Raw"
+    private fun ChapterVersionDto.toSChapter(number: Float, id: String, realId: String): SChapter? {
+        // Unreleased chapters have no date
+        val date = create ?: return null
+
+        return SChapter.create().apply {
+            name = "Capítulo ${number.toString().removeSuffix(".0")}"
+            chapter_number = number
+            date_upload = date
+            setUrlWithoutDomain(link.replace(id, realId))
+            scanlator = if (joint.isEmpty()) {
+                "ManhwaWeb Bot"
+            } else {
+                joint.map { it.name.trim() }.filter { it.isNotEmpty() }.joinToString().ifEmpty { null }
+            }
+        }
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         val slug = chapter.url.removeSuffix("/").substringAfterLast("/")
 
-        val response = client.get("$apiUrl/chapters/see/$slug")
+        val response = client.get("$apiUrl/chapters/see_new/$slug")
 
-        val result = response.parseAs<PayloadPageDto>()
-        return result.data.images.filter { it.startsWith("http") }
+        val result = response.parseAs<PageDto>()
+        return result.images.filter { it.startsWith("http") }
             .mapIndexed { i, img -> Page(i, imageUrl = img) }
     }
 
